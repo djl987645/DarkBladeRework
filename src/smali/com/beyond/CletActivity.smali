@@ -357,7 +357,8 @@
     goto :goto_0
 .end method
 
-.method private subCreate()V
+    # [화면 구성] ScreenConfig 초기화 → CletView 생성 → setCanvasSize → AppThread.start()
+    .method private subCreate()V
     .locals 11
 
     .prologue
@@ -862,7 +863,8 @@
     return-void
 .end method
 
-.method public onCreate(Landroid/os/Bundle;[Ljava/lang/String;)V
+    # [액티비티] 메인 생성 — 사운드 배열 전달받아 AppThread 생성·시작
+    .method public onCreate(Landroid/os/Bundle;[Ljava/lang/String;)V
     .locals 2
     .param p1, "savedInstanceState"    # Landroid/os/Bundle;
     .param p2, "resNames"    # [Ljava/lang/String;
@@ -976,7 +978,8 @@
     return-void
 .end method
 
-.method public onKeyDown(ILandroid/view/KeyEvent;)Z
+    # [입력] 하드웨어 키 입력 → 네이티브 BhandleKeyEvent로 전달
+    .method public onKeyDown(ILandroid/view/KeyEvent;)Z
     .locals 9
     .param p1, "keyCode"    # I
     .param p2, "event"    # Landroid/view/KeyEvent;
@@ -1251,7 +1254,8 @@
     return-void
 .end method
 
-.method public onTouchEvent(Landroid/view/MotionEvent;)Z
+    # [입력] 터치 이벤트 → 네이티브 BhandleTouchPress/Release/Drag로 전달
+    .method public onTouchEvent(Landroid/view/MotionEvent;)Z
     .locals 8
     .param p1, "event"    # Landroid/view/MotionEvent;
 

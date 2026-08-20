@@ -2,6 +2,13 @@
 .super Lcom/beyond/CletActivity;
 .source "DarkBlade.java"
 
+# ============================================================
+# [게임 진입점] com.mobicle.darkblade.DarkBlade
+# - 2008년작, Beyond(컴투스 계열) CletActivity 프레임워크 상속
+# - onCreate에서 효과음 목록(37개 ogg)을 구성해 부모로 전달
+# - KT 결제 초기화(KTinitPurchase) 수행
+# - ※ 본판 코드 — 수정 금지 (v0 방침)
+# ============================================================
 
 # direct methods
 .method public constructor <init>()V
@@ -17,6 +24,7 @@
 
 # virtual methods
 .method public onCreate(Landroid/os/Bundle;)V
+    # 게임 시작: 사운드 배열 → CletActivity.onCreate(Bundle, String[]) → subCreate() → AppThread.start()
     .locals 3
     .param p1, "savedInstanceState"    # Landroid/os/Bundle;
 

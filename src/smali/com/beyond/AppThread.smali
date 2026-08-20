@@ -383,28 +383,36 @@
 
 
 # virtual methods
-.method public native BhandleBuyEvent(II)V
+    # [네이티브] 결제 이벤트 처리 (구매 완료/실패)
+    .method public native BhandleBuyEvent(II)V
 .end method
 
-.method public native BhandleKeyEvent(II)Z
+    # [네이티브] 키 입력 이벤트 (반환값: 처리 여부)
+    .method public native BhandleKeyEvent(II)Z
 .end method
 
-.method public native BhandleMediaEvent(Landroid/media/MediaPlayer;I)V
+    # [네이티브] 미디어(배경음악) 재생 완료 이벤트
+    .method public native BhandleMediaEvent(Landroid/media/MediaPlayer;I)V
 .end method
 
-.method public native BhandleMotionEvent(III)V
+    # [네이티브] 모션(트랙볼/방향키) 입력 이벤트
+    .method public native BhandleMotionEvent(III)V
 .end method
 
-.method public native BhandleNetEvent(II)V
+    # [네이티브] 네트워크 이벤트 (서버 응답 콜백)
+    .method public native BhandleNetEvent(II)V
 .end method
 
-.method public native BhandleTouchDrag(III)V
+    # [네이티브] 터치 드래그 입력
+    .method public native BhandleTouchDrag(III)V
 .end method
 
-.method public native BhandleTouchPress(III)V
+    # [네이티브] 터치 눌림 입력
+    .method public native BhandleTouchPress(III)V
 .end method
 
-.method public native BhandleTouchRelease(III)V
+    # [네이티브] 터치 뗌 입력
+    .method public native BhandleTouchRelease(III)V
 .end method
 
 .method public MyScoket_connection(Ljava/lang/Object;)V
@@ -1465,7 +1473,8 @@
     return v2
 .end method
 
-.method public native initCanvas(Landroid/graphics/Canvas;)V
+    # [네이티브] 렌더 타깃(Canvas) 초기화
+    .method public native initCanvas(Landroid/graphics/Canvas;)V
 .end method
 
 .method public knlshowExitDlg([C[C)V
@@ -2175,16 +2184,20 @@
     return-void
 .end method
 
-.method public native pltFinish()V
+    # [네이티브] 게임 종료 (스레드/리소스 정리)
+    .method public native pltFinish()V
 .end method
 
-.method public native pltPause()V
+    # [네이티브] 게임 일시정지 (백그라운드 전환 시)
+    .method public native pltPause()V
 .end method
 
-.method public native pltResume()V
+    # [네이티브] 게임 재개 (포그라운드 복귀 시)
+    .method public native pltResume()V
 .end method
 
-.method public native pltStart(Ljava/lang/String;Ljava/lang/String;)V
+    # [네이티브] 게임 시작! (filesDir, cacheDir 경로 전달) — libLauncher.so 진입점
+    .method public native pltStart(Ljava/lang/String;Ljava/lang/String;)V
 .end method
 
 .method public run()V
@@ -2249,7 +2262,8 @@
     return-void
 .end method
 
-.method public native setCanvas(IIIIII)V
+    # [네이티브] 캔버스 크기/오프셋 설정 (SkBitmap 초기화 유발)
+    .method public native setCanvas(IIIIII)V
 .end method
 
 .method public setCanvas(Landroid/graphics/Canvas;)V
