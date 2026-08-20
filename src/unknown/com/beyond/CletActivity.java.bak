@@ -1,0 +1,1770 @@
+package com.beyond;
+
+import java.io.*;
+import java.net.*;
+import java.nio.ByteBuffer;
+
+import java.io.BufferedOutputStream;
+import java.io.BufferedWriter;
+import java.io.File;
+import java.io.FileDescriptor;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
+import java.io.FileWriter;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.util.ArrayList;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipFile; 
+
+import com.beyond.screen.ScreenConfig;
+import com.beyond.sui.SUIBase;
+import com.beyond.sui.SUIWeb;
+import com.beyond.util.MessageInfo;
+//사운드 강제 수정(창호)
+//import com.mobicle.ft2.FT2;
+//import com.mobicle.gostop.Gostop;
+//import com.mobicle.art.art;
+
+//예전 도코모때문에 수정한 부분인듯 하다...ㅋ
+//import com.smithnmobile.archer.DoCoMo_Android;
+
+import android.R.string;
+import android.app.Activity;
+import android.app.AlertDialog;
+import android.app.AlertDialog.Builder;
+
+import android.content.Context;
+import android.content.DialogInterface;
+import android.content.Intent;
+
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
+import android.graphics.Canvas;
+import android.graphics.Color;
+import android.graphics.Paint;
+import android.graphics.Point;
+import android.graphics.Rect;
+import android.graphics.Typeface;
+import android.hardware.SensorManager;
+import android.media.AudioManager;
+import android.media.MediaPlayer;
+import android.media.MediaPlayer.OnCompletionListener;
+import android.net.ConnectivityManager;
+import android.net.NetworkInfo;
+import android.net.Uri;
+import android.os.Build;
+import android.os.Bundle;
+import android.os.Message;
+import android.text.TextPaint;
+import android.util.Log;
+import android.view.KeyEvent;
+import android.view.MotionEvent;
+import android.view.View;
+import android.view.ViewGroup;
+import android.view.Window;
+import android.view.WindowManager;
+import android.util.AttributeSet;
+import android.view.SurfaceHolder;
+import android.view.SurfaceView;
+import android.view.MotionEvent;
+import android.widget.AbsoluteLayout;
+import android.widget.Toast;
+
+public class CletActivity extends BeyondActivity{
+
+	public static final int MH_EXIT_EVENT = 1;
+	public static final int MH_KEY_PRESSEVENT = 2;
+	public static final int MH_KEY_RELEASEEVENT = 3;
+	public static final int MH_KEY_REPEATEVENT = 4;
+	public static final int MH_TIMER_EVENT = 5;
+	public static final int MH_SMS_EVENT = 6;
+	public static final int MH_CALL_EVENT = 7;
+	public static final int MH_ANN_EVENT = 8;
+	public static final int MH_NETWORK_EVENT = 9;
+	public static final int MH_SERIAL_EVENT = 10;
+	public static final int MH_MEDIA_EVENT = 11;
+	public static final int MH_SUSPEND_EVENT = 12;
+	public static final int MH_RESUME_EVENT = 13;
+	public static final int MH_RESTART_EVENT = 14;
+
+	public static final int MH_POINT_PRESSEVENT = 15;
+	public static final int MH_POINT_RELEASEEVENT = 16;
+	public static final int MH_POINT_DRAGEVENT = 17;
+
+	public static final int MH_POINTER_DBLCLK_EVENT = 18;
+	public static final int MH_POINTER_REPEAT_EVENT = 19;
+
+	public static final int MH_MOTION_EVENT = 20;
+	
+	private Canvas mCanvas = null;
+	private SurfaceHolder mHolder = null;
+	private static AppThread appTh = null;// = new AppThread(this);
+	private boolean fullScreen = true;
+//	private SensorManager mSensorManager;
+	//private Sensor mSensor = null;
+	private boolean firstResume = true;
+    
+	public static CletView view = null;
+	private static Point gameDisplaySize = null;
+//	public static Context context = null;
+	public static String[] soundPoolRes = null;
+	
+// for docomo authentication (smith archer)	
+	boolean isDocomoAuth = false;
+	boolean bThreadStart = false;
+	
+	//사운드풀 확장자명 
+	public static String s_pool_type = "";
+	
+	private class AppFrameBuffer extends CletView implements SurfaceHolder.Callback {	 
+	
+		AppFrameBuffer(Context context){
+			super(context);
+			mHolder = getHolder();
+			mHolder.addCallback(this);
+		}        
+		
+		public void surfaceChanged(SurfaceHolder holder, int format, int width, int height) {
+		
+		}
+		
+		public void surfaceCreated(SurfaceHolder holder) {
+			mHolder = holder;
+			mCanvas = mHolder.lockCanvas();
+			if (mCanvas != null) {
+				appTh.setHolder(mHolder);
+				appTh.setCanvas(mCanvas);
+				appTh.initCanvas(mCanvas);		
+				mHolder.unlockCanvasAndPost(mCanvas);
+			}
+			/*
+			if (isDocomoAuth){
+				if (!bThreadStart){//리즘일 경우 쓰레드 바로 start
+					GameView_Init();
+				} else {
+					GameView_Start();
+				}
+			}
+			*/
+		}
+		
+		public void surfaceDestroyed(SurfaceHolder holder) {
+			//appTh.pltFinish();
+		}
+		
+		//<-- 20110706
+		//!@wjl
+		private void dumpEvent(MotionEvent event) {
+			   String names[] = { "DOWN" , "UP" , "MOVE" , "CANCEL" , "OUTSIDE" ,
+			      "POINTER_DOWN" , "POINTER_UP" , "7?" , "8?" , "9?" };
+			   StringBuilder sb = new StringBuilder();
+			   int action = event.getAction();
+			   int actionCode = action & MotionEvent.ACTION_MASK;
+			   sb.append("event ACTION_" ).append(names[actionCode]);
+			   if (actionCode == MotionEvent.ACTION_POINTER_DOWN
+			         || actionCode == MotionEvent.ACTION_POINTER_UP) {
+			      sb.append("(pid " ).append(
+			      action >> MotionEvent.ACTION_POINTER_ID_SHIFT);
+			      sb.append(")" );
+			   }
+			   sb.append("[" );
+			   for (int i = 0; i < event.getPointerCount(); i++) {
+			      sb.append("#" ).append(i);
+			      sb.append("(pid " ).append(event.getPointerId(i));
+			      sb.append(")=" ).append((int) event.getX(i));
+			      sb.append("," ).append((int) event.getY(i));
+			      if (i + 1 < event.getPointerCount())
+			         sb.append(";" );
+			   }
+			   sb.append("]" );
+			   Log.d("TOUCH", sb.toString());
+		}
+		
+		
+		boolean IS_DBTOUCH = true;
+		int 	pid = 1;
+		int 	pcount = 0;
+		public boolean onTouchDbEvent(MotionEvent event)
+		{
+			//dumpEvent(event);
+			int pointerCount = event.getPointerCount();
+			
+			if(event.getPointerCount() > 2){
+				super.onTouchEvent(event);
+				return true;
+			}
+			int action = event.getAction();
+			int actionCode =(action& MotionEvent.ACTION_MASK); 
+			int x = 0;
+			int y = 0;
+			int i = 0;
+			if((action >> MotionEvent.ACTION_POINTER_ID_SHIFT) > 0)
+			{
+				i = (action >> MotionEvent.ACTION_POINTER_ID_SHIFT);
+			}
+			
+			if(actionCode != MotionEvent.ACTION_MOVE)
+			{
+				x = (int)event.getX(event.getPointerId(i));
+				y = (int)event.getY(event.getPointerId(i));
+				
+				if(x_ratio != 1)
+					x = (int)(x*x_ratio);			
+				if(y_ratio != 1)
+					y = (int)(y*y_ratio); 
+				//Log.i("TOUCH","@"+i+",PID="+event.getPointerId(i)+"x="+x+",y="+y+",xratio="+x_ratio+",yratio="+y_ratio);
+				
+				switch(actionCode) {
+				case MotionEvent.ACTION_DOWN://pid 0 
+					appTh.BhandleTouchPress(x , y,i);
+					break;
+				case MotionEvent.ACTION_POINTER_DOWN://pid 1
+					//Log.i("TOUCH","P["+i+","+tcId+"]x ="+x+",y ="+y);
+					appTh.BhandleTouchPress(x , y,i);
+					break;//return true;
+				case MotionEvent.ACTION_UP://pid 0
+					appTh.BhandleTouchRelease(x , y,i);
+					break;
+				case MotionEvent.ACTION_POINTER_UP:
+					//Log.i("TOUCH","R["+i+","+tcId+"]x ="+x+",y ="+y);
+					appTh.BhandleTouchRelease(x , y,i);
+					break;//return true;
+				case MotionEvent.ACTION_MOVE:
+					//Log.i("TOUCH","M["+i+","+tcId+"]x ="+x+",y ="+y);
+					appTh.BhandleTouchDrag(x , y,i);
+					break;//return true;
+				}
+			}
+			else
+			{
+
+				for(;i<pointerCount;i++)
+				{
+					x = (int)event.getX(event.getPointerId(i));
+					y = (int)event.getY(event.getPointerId(i));
+					
+					if(x_ratio != 1)
+						x = (int)(x*x_ratio); 
+					if(y_ratio != 1)
+						y = (int)(y*y_ratio); 
+					//Log.i("TOUCH","@"+i+",PID="+event.getPointerId(i)+"x="+x+",y="+y+",xratio="+x_ratio+",yratio="+y_ratio);
+					
+					switch(actionCode) {
+					case MotionEvent.ACTION_DOWN://pid 0 
+						appTh.BhandleTouchPress(x , y,i);
+						break;
+					case MotionEvent.ACTION_POINTER_DOWN://pid 1
+						//Log.i("TOUCH","P["+i+","+tcId+"]x ="+x+",y ="+y);
+						appTh.BhandleTouchPress(x , y,i);
+						break;//return true;
+					case MotionEvent.ACTION_UP://pid 0
+						appTh.BhandleTouchRelease(x , y,i);
+						break;
+					case MotionEvent.ACTION_POINTER_UP:
+						//Log.i("TOUCH","R["+i+","+tcId+"]x ="+x+",y ="+y);
+						appTh.BhandleTouchRelease(x , y,i);
+						break;//return true;
+					case MotionEvent.ACTION_MOVE:
+						//Log.i("TOUCH","M["+i+","+tcId+"]x ="+x+",y ="+y);
+						appTh.BhandleTouchDrag(x , y,i);
+						break;//return true;
+					}
+				}
+			}
+			
+			return true;//return super.onTouchEvent(event); 
+		}
+		//-->20110706
+		
+		
+		public boolean onTouchEvent(MotionEvent event) {
+			if(suiMgr.onTouchEvent(event, this))
+				return true;
+			if(IS_DBTOUCH == true)
+			{
+				return onTouchDbEvent(event);
+			}
+			else{
+			
+			int pointerCount = event.getPointerCount();
+			
+			if(event.getPointerCount() > 2){
+				super.onTouchEvent(event);
+				return true;
+			}
+			int action = event.getAction();
+			int actionCode =(action& MotionEvent.ACTION_MASK); 
+			int x = 0;
+			int y = 0;
+				
+				//이벤트로 터치 인덱스 구하기
+				int tcId = 0;
+				tcId = (action >> MotionEvent.ACTION_POINTER_ID_SHIFT);
+				x = (int)event.getX(tcId);
+				y = (int)event.getY(tcId);
+				//Log.i("TOUCH","pointer Count = "+pointerCount+",PID="+tcId);
+				if(x_ratio != 1)
+					x = (int)(x*x_ratio);			
+				if(y_ratio != 1)
+					y = (int)(y*y_ratio); 
+				
+				switch(actionCode) {
+				case MotionEvent.ACTION_DOWN:
+				case MotionEvent.ACTION_POINTER_DOWN:
+					//Log.i("TOUCH","P["+i+","+tcId+"]x ="+x+",y ="+y);
+					appTh.BhandleTouchPress(x , y,tcId);
+					return true;
+				case MotionEvent.ACTION_UP:
+				case MotionEvent.ACTION_POINTER_UP:
+					//Log.i("TOUCH","R["+i+","+tcId+"]x ="+x+",y ="+y);
+					appTh.BhandleTouchRelease(x , y,tcId);
+					return true;
+				case MotionEvent.ACTION_MOVE:
+					//Log.i("TOUCH","M["+i+","+tcId+"]x ="+x+",y ="+y);
+					appTh.BhandleTouchDrag(x , y,tcId);
+					return true;
+				}
+			}
+			return super.onTouchEvent(event);
+		}
+		
+		private int getWipiTouchEvent(int action) {
+			int ret = -1;
+			
+			switch(action) {
+			case MotionEvent.ACTION_DOWN :
+				ret = MH_POINT_PRESSEVENT;
+				break;
+			case MotionEvent.ACTION_UP  :
+				ret = MH_POINT_RELEASEEVENT;
+				break;
+			case MotionEvent.ACTION_MOVE :
+				ret = MH_POINT_DRAGEVENT;
+				break;
+			}
+			
+			return ret;	
+		}
+	}
+/*
+	public void GameView_Init() {
+		DoCoMo_Android.DoCoMoInit(this, scrConfig.getPlayerRect().width(), scrConfig.getPlayerRect().height(), 1);//게임코드 1번
+
+		if(DoCoMo_Android.DoCoMo_DrawView()){//구입자일 경우 쓰레드 start
+			GameView_Start();
+			bThreadStart = true;
+		}
+	}
+	
+	public void GameView_Start() {//쓰레드 start
+		if (!bThreadStart){
+			appTh.setContext(this);
+			appTh.start();
+		}
+	}
+*/	
+	private void subCreate(){
+		/*
+        setTheme(android.R.style.Theme_Black_NoTitleBar_Fullscreen);
+
+        getWindow().requestFeature(android.view.Window.FEATURE_NO_TITLE); 
+        this.getWindow().setFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN ,
+        		WindowManager.LayoutParams.FLAG_FULLSCREEN );        
+        mSensorManager = (SensorManager) getSystemService(SENSOR_SERVICE);                
+
+        // BeyondActivyty.vg
+        ViewGroup vg = new AbsoluteLayout(this);
+        setContentView(vg);
+*/        
+	
+       // ScreenConfig scrConfig = new ScreenConfig();
+		scrConfig = new ScreenConfig();
+        scrConfig.initConfig(this, new Point(vg.getWidth(), vg.getHeight()), true);        
+        this.setRequestedOrientation(scrConfig.getScreenMode());
+
+        view = new AppFrameBuffer(this);
+        Rect playerRect = scrConfig.getPlayerRect();
+        
+        //여기서 화면 비율 조정?
+        int display_size = 100; 
+        
+        if(Build.VERSION.SDK_INT > 10){
+        	display_size = 95;
+        }
+
+        
+        if(playerRect == null) {
+//        	setContentView(view);
+        	android.view.Display display = ((WindowManager) getSystemService(Context.WINDOW_SERVICE)).getDefaultDisplay(); 
+        	vg.addView(view, new AbsoluteLayout.LayoutParams(display.getWidth(), display.getHeight(), 0, 0));
+        	appTh.setCanvasSize(display.getWidth(), display.getHeight(), 0, 0, display.getWidth(), display.getHeight());
+//        	Log.i("LCD_SIZE","width"+display.getWidth()+":height"+display.getHeight());
+        }
+        else {
+            Rect gameDisplayRect = scrConfig.getGameDisplayRect();
+            if(gameDisplayRect == null) {
+            	gameDisplaySize = new Point(playerRect.width(), playerRect.height());
+            }
+            else {
+            	
+            	gameDisplaySize = new Point(gameDisplayRect.width(), gameDisplayRect.height());
+            	view.setScaleRatio((float)gameDisplayRect.width()/(float)playerRect.width(), (float)gameDisplayRect.height()/(float)(playerRect.height()*display_size/100));
+            }
+        	
+	        vg.addView(view, new AbsoluteLayout.LayoutParams(playerRect.width(), playerRect.height()*display_size/100, playerRect.left, playerRect.top));
+	        scrConfig.makeScreen(vg, view, -1);
+			appTh.setCanvasSize(gameDisplaySize.x, gameDisplaySize.y, playerRect.left, playerRect.top, playerRect.width(), playerRect.height()*display_size/100);
+        }
+
+        /*
+		 * docomo authentication
+		 */
+        if (isDocomoAuth == false){
+			appTh.setContext(this);
+			appTh.start();
+		}
+
+	}
+	/** Called when the activity is first created. */
+	public void onCreate(Bundle savedInstanceState) {
+		instance = this;
+        super.onCreate(savedInstanceState);
+        context = this;
+        appTh = new AppThread(this); 
+        subCreate();
+	}
+
+	public void onCreate(Bundle savedInstanceState, String[] resNames) {
+		instance = this;
+        super.onCreate(savedInstanceState);
+        context = this;
+        appTh = new AppThread(this, resNames); 
+        s_pool_type = resNames[0].substring(resNames[0].length()-4);
+        subCreate();	
+	}
+
+	public void onCreate(Bundle savedInstanceState, String[] resNames, String appID) {
+		instance = this;
+		super.onCreate(savedInstanceState);
+        context = this;
+        soundPoolRes = resNames;
+        s_pool_type = resNames[0].substring(resNames[0].length()-4);
+        //!@kmg
+        //startCheck(appID);        
+	}
+	
+	
+	public void startCheck(String appID) {
+		try {
+           Class justclass = Class.forName("com.skt.ScreenConfig");
+           ((ScreenConfig)(justclass.newInstance())).runCheck(appID);
+		} catch (Exception e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		} 
+	}	
+		
+
+	public void appStart() {
+		if (soundPoolRes != null)
+			appTh = new AppThread(this, soundPoolRes); 
+		else 
+			appTh = new AppThread(this);
+		subCreate();			
+	}
+	
+	public void finish() {
+		super.finish();
+		if(appTh != null)
+			appTh.pltFinish();
+	}
+	
+	public void destroyProcess() {
+		//jasper System.exit(0);
+		android.os.Process.killProcess(android.os.Process.myPid()); 
+	}
+	
+	/*
+	private int getWipiKeyCode(int key) {
+		int ret = 0;
+
+		switch(key) {
+		case KeyEvent.KEYCODE_DPAD_CENTER :
+		case KeyEvent.KEYCODE_ENTER :
+			ret = DisplayBridge.MH_KEY_SELECT;
+			break;
+		case KeyEvent.KEYCODE_DPAD_UP:
+			ret = DisplayBridge.MH_KEY_UP;
+			break;
+		case KeyEvent.KEYCODE_DPAD_RIGHT :
+			ret = DisplayBridge.MH_KEY_RIGHT;
+			break;
+		case KeyEvent.KEYCODE_DPAD_LEFT:
+			ret = DisplayBridge.MH_KEY_LEFT;
+			break;
+		case KeyEvent.KEYCODE_DPAD_DOWN :
+			ret = DisplayBridge.MH_KEY_DOWN;
+			break;
+		case KeyEvent.KEYCODE_CALL :
+			ret = DisplayBridge.MH_KEY_SEND;
+			break;			
+	    case KeyEvent.KEYCODE_MENU :	// 82
+	//    	ret = DisplayBridge.MH_KEY_1;	// for zoobreaker
+	    	break;
+		case KeyEvent.KEYCODE_BACK :	// 4
+	//    	ret = DisplayBridge.MH_KEY_2;	// for zoobreaker
+			//ret = DisplayBridge.MH_KEY_END;
+			break;				
+		case KeyEvent.KEYCODE_DEL :
+		case KeyEvent.KEYCODE_CLEAR  :
+			ret = DisplayBridge.MH_KEY_CLEAR;
+			break;
+		case KeyEvent.KEYCODE_POUND :
+			ret = DisplayBridge.MH_KEY_POUND;
+			break;
+		case KeyEvent.KEYCODE_STAR  :
+			ret = DisplayBridge.MH_KEY_ASTERISK;
+			break;
+		case KeyEvent.KEYCODE_SOFT_LEFT  :
+			ret = DisplayBridge.MH_KEY_SOFT1;
+			break;
+		case KeyEvent.KEYCODE_SOFT_RIGHT   :
+			ret = DisplayBridge.MH_KEY_SOFT3;
+			break;
+		case KeyEvent.KEYCODE_VOLUME_DOWN   :
+//			ret = DisplayBridge.MH_KEY_SIDE_DOWN;
+			break;
+		case KeyEvent.KEYCODE_VOLUME_UP    :
+//			ret = DisplayBridge.MH_KEY_SIDE_UP;
+			break;
+		case KeyEvent.KEYCODE_CAMERA     :
+			ret = DisplayBridge.MH_KEY_CAMERA;
+			break;
+		case KeyEvent.KEYCODE_0  :
+		case KeyEvent.KEYCODE_1  :
+		case KeyEvent.KEYCODE_2  :
+		case KeyEvent.KEYCODE_3  :
+		case KeyEvent.KEYCODE_4  :
+		case KeyEvent.KEYCODE_5  :
+		case KeyEvent.KEYCODE_6  :
+		case KeyEvent.KEYCODE_8  :
+		case KeyEvent.KEYCODE_9  :
+			ret = DisplayBridge.MH_KEY_0 + key - KeyEvent.KEYCODE_0;			
+			break;
+		}		
+		if((key >= KeyEvent.KEYCODE_A) && (key <= KeyEvent.KEYCODE_Z))
+			return DisplayBridge.MH_KEY_QUERTY_A + key-KeyEvent.KEYCODE_A;
+		
+		return ret;		
+	}
+	
+	private int getWipiKeyEvent(int action) {
+		int ret = -1;
+		
+		switch(action) {
+		case KeyEvent.ACTION_DOWN :
+			ret = MH_KEY_PRESSEVENT;
+			break;
+		case KeyEvent.ACTION_UP  :
+			ret = MH_KEY_RELEASEEVENT;
+			break;
+		case KeyEvent.ACTION_MULTIPLE :
+			ret = MH_KEY_REPEATEVENT;
+			break;
+		}
+		
+		return ret;	
+	}	
+	*/
+	public boolean onKeyDown(int keyCode, KeyEvent event) {
+		if (isAppHandleSIDEKey) {
+			if (keyCode == KeyEvent.KEYCODE_VOLUME_DOWN)
+			{
+				System.out.println("getWipiKeyCode = KeyEvent.KEYCODE_VOLUME_DOWN");
+				android.media.AudioManager am = (AudioManager) getSystemService(AUDIO_SERVICE);
+				int streamType = android.media.AudioManager.STREAM_MUSIC;
+				int volume = am.getStreamVolume(streamType)*100/am.getStreamMaxVolume(streamType);
+				int max = am.getStreamMaxVolume(streamType);
+				int vol = am.getStreamVolume(streamType);
+				am.setStreamVolume(streamType, (volume-10)*am.getStreamMaxVolume(streamType)/100, AudioManager.FLAG_SHOW_UI);
+				return true;
+			}
+			else if (keyCode == KeyEvent.KEYCODE_VOLUME_UP) {
+				System.out.println("getWipiKeyCode = KeyEvent.KEYCODE_VOLUME_UP");
+				android.media.AudioManager am = (AudioManager) getSystemService(AUDIO_SERVICE);
+				int streamType = android.media.AudioManager.STREAM_MUSIC;
+				int volume = am.getStreamVolume(streamType)*100/am.getStreamMaxVolume(streamType);
+				am.setStreamVolume(streamType, (volume+10)*am.getStreamMaxVolume(streamType)/100, AudioManager.FLAG_SHOW_UI);
+				return true;
+			}
+		}
+
+		int wipikey = getWipiKeyCode(keyCode);
+		if (wipikey !=0 && appTh.BhandleKeyEvent(MH_KEY_PRESSEVENT, wipikey))
+			return true;
+		else
+			return super.onKeyDown(keyCode, event);
+	}
+
+
+	public boolean onKeyUp(int keyCode, KeyEvent event) {
+		if (isAppHandleReturnKey == false) {			  		
+			if (keyCode == KeyEvent.KEYCODE_BACK) {
+				showExitDlg();
+//				finish();
+				return true;
+			}
+		}
+		
+		int wipikey = getWipiKeyCode(keyCode);
+		if (wipikey !=0 && appTh.BhandleKeyEvent(MH_KEY_RELEASEEVENT, wipikey))
+			return true;
+		else
+			return super.onKeyUp(keyCode, event);
+	}
+
+
+	public boolean onTouchEvent(MotionEvent event) {
+		int type = event.getAction();
+		//Log.i("TOUCH","onTouchEvent 0 "+event.getPointerCount()+",type="+type);
+		int x = (int)event.getX();
+		int y = (int)event.getY();
+		if(view.x_ratio != 1)
+			x = (int)(x*view.x_ratio);			
+		if(view.y_ratio != 1)
+			y = (int)(y*view.y_ratio);  
+		
+		if(type == MotionEvent.ACTION_DOWN){
+			appTh.BhandleTouchPress(x , y,0);
+			return true;
+			
+		}else if(type == MotionEvent.ACTION_UP){
+			appTh.BhandleTouchRelease(x , y,0);
+			return true;
+			
+		}else if(type == MotionEvent.ACTION_MOVE){
+			appTh.BhandleTouchDrag(x , y,0);
+			return true;
+		} 		
+		
+		return super.onTouchEvent(event);
+	}
+
+
+	protected void onAppPause() {
+		
+		if(appTh != null)
+			appTh.pltPause();
+	}
+	
+	protected void onAppResume() {
+
+		if(firstResume == true) {
+			firstResume = false;
+			return;
+		}
+		if(appTh != null)
+			appTh.pltResume();
+	}	
+	/*
+	protected void onResume() {
+		super.onResume();  
+		if (!bThreadStart)
+			GameView_Init();
+		//onAppResume();
+	} 
+	*/   
+
+	
+	/* Called after onStop() when the current activity is being re-displayed to the user (the user has navigated back to it).
+	 * @see android.app.Activity#onRestart()
+	 */
+
+	protected void onRestart() {
+		super.onRestart();
+	}	
+
+	/* Called when you are no longer visible to the user.
+	 * @see android.app.Activity#onStop()
+	 */
+
+	protected void onStop() {
+		super.onStop();
+	}
+	
+	/* Called after onCreate(Bundle) ? or after onRestart() when the activity had been stopped, but is now again being displayed to the user.
+	 * @see android.app.Activity#onStart()
+	 */
+
+	protected void onStart() {
+		super.onStart();
+	}
+	
+
+	/* Perform any final cleanup before an activity is destroyed.
+	 * @see android.app.Activity#onDestroy()
+	 */
+
+	protected void onDestroy() { // may not be called
+		super.onDestroy();
+		destroyProcess(); 
+	}
+
+	/* This is called when the overall system is running low on memory, and would like actively running process to try to tighten their belt.
+	 * @see android.app.Activity#onLowMemory()
+	 */
+
+	public void onLowMemory() {
+		super.onLowMemory();
+	}
+
+
+	public boolean onTrackballEvent(MotionEvent event) {
+		return super.onTrackballEvent(event);
+	}
+	
+	public static void sendWipiKeyEvent(int action, int key) {
+		if(appTh != null){
+			if(action == EventQueueBridge.KEY_PRESSED)
+				action = MH_KEY_PRESSEVENT;
+			else if(action == EventQueueBridge.KEY_RELEASED)
+				action = MH_KEY_RELEASEEVENT;
+			else
+				return;
+			appTh.BhandleKeyEvent(action, key);
+		}
+	}
+	
+	public static void sendMotionEvent(int x, int y, int z) {
+		if(appTh != null){
+			appTh.BhandleMotionEvent(x, y, z);
+		}
+	}	
+	public void suiinit( ){
+		
+	}
+	public void suishow(String name){
+		view.suishow(name);
+	}
+	
+	public void suihide(String name){
+		view.suihide(name);
+	}
+	public void suihideall(){
+		view.suihideall();
+	}
+	public void drawsui(){
+		view.onDraw(mCanvas);
+	}
+	public String suiGetValue(int componentType, String name){
+		return view.suiGetValue(componentType, name);
+	}
+	public void suiSetValue(int componentType, String name, String v){
+		view.suiSetValue(componentType, name, v);
+	}
+	
+	//!@wjl public SUIWeb m_suiweb = null;
+	private void showExitDlg()
+	{
+		//!@wjl if(m_suiweb ==  null)
+		//!@wjl	m_suiweb = new SUIWeb();
+		//!@wjl Rect rt = new Rect();
+		//!@wjl rt.set(0,0,1,1);
+		//!@wjl m_suiweb.requestCreate("http://www.nate.com",rt);
+		
+		appTh.pltPause();
+		if (BeyondBridge.getSystemProperty0("locale").startsWith("ko"))
+			scrConfig.showDlg("종료", "종료하시겠습니까 ?", 1, new DialogInterface.OnClickListener(){
+				public void onClick(DialogInterface dialog, int which) {
+					if(dialog != null)
+						dialog.dismiss();
+					if(which == DialogInterface.BUTTON_POSITIVE) {
+						//jasper appTh.pltFinish();
+						finish();
+						return;
+					}
+					appTh.pltResume();			
+				}});
+		else
+			scrConfig.showDlg("Exit", "Are you sure to Exit?", 1, new DialogInterface.OnClickListener(){
+				public void onClick(DialogInterface dialog, int which) {
+					if(dialog != null)
+						dialog.dismiss();
+					if(which == DialogInterface.BUTTON_POSITIVE) {
+						//jasper appTh.pltFinish();
+						finish();
+						return;
+					}
+					appTh.pltResume();			
+				}});
+		
+	}
+	
+	
+	/*
+    boolean enableSensor(boolean isSet) {
+    	if(isSet) {
+    		if(mSensor != null)
+    			return true;
+    		
+    		mSensor = new Sensor(true);
+            mSensorManager.registerListener(mSensor, 
+                    SensorManager.SENSOR_ACCELEROMETER,
+                    SensorManager.SENSOR_DELAY_GAME);      		
+    	}
+    	else {
+    		if(mSensor == null)
+    			return true;
+
+    		mSensorManager.unregisterListener(mSensor);
+    		mSensor = null;
+    	}
+    	
+    	return false;
+    }	
+    */
+	
+	public static void handleSendBuyEvent(int arg0,int arg1) 
+	{
+//		Log.i("DEBUG_INAPP","sendBuyEvent("+arg0);
+		if(appTh != null){
+			appTh.BhandleBuyEvent(arg0, arg1);
+		}
+	}
+	
+	public static void handleNetEvent(int arg0, int arg1)
+	{
+		if(appTh != null){
+			appTh.BhandleNetEvent(arg0, arg1);
+		}
+	}
+	
+	public void netSocketConnect(Object obj)
+	{
+//		Log.i("TEST","CletActivity.netSocketConnect");
+		if(appTh != null){
+			appTh.MyScoket_connection(obj);
+		}
+	}
+	
+		
+}//end of CletActivity
+
+class CMediaPlayer
+{
+	private final static int  MC_MDA_STATUS_ERROR = -1;
+	private final static int  MC_MDA_STATUS_END_OF_DATA = 1;
+	private final static int  MC_MDA_STATUS_START = 2;
+	private final static int  MC_MDA_STATUS_STOP = 3;
+	private final static int  MC_MDA_STATUS_PAUSE = 4;
+	private final static int  MC_MDA_STATUS_RESUME = 5;
+	private final static int  MC_MDA_STATUS_RECORD = 6;
+	private final static int  MC_MDA_STATUS_FULL_OF_DATA = 7;
+	private final static int  MC_MDA_STATUS_FILENOSPACE	= 8;
+	private final static int  MC_MDA_STATUS_OEM_ERROR =	9;
+	private final static int  MC_MDA_STATUS_END_OF_MEDIA = 10;
+	private final static int  MC_MDA_STATUS_STOPPED_AT_TIME	= 11;
+	
+	private File mediaFile;
+	private AppThread appTh;
+	private int mediaID;
+	private File cachedir;
+    private int soundid;
+    private boolean mrepeate = false;
+    private android.media.MediaPlayer mp = null;
+    
+	public CMediaPlayer(File dir, int id, AppThread appTh){
+		cachedir = dir;
+		this.appTh = appTh;		
+		mediaID = id;
+		soundid = -1;
+		return;
+	}
+	
+	public void wirtedata(byte[] data, boolean repeate){
+
+		try{
+			mp = new android.media.MediaPlayer();
+			mediaFile = new File(cachedir.getAbsolutePath()+"/Media_"+mediaID);
+			mediaFile.deleteOnExit();			
+			java.io.FileOutputStream outStream = new java.io.FileOutputStream(mediaFile, false);
+			outStream.write(data, 0, data.length);
+			outStream.close();
+			java.io.FileInputStream inbuf = new java.io.FileInputStream(mediaFile);
+			mp.setDataSource(inbuf.getFD());
+			inbuf.close();
+	        if(repeate)
+	        	mp.setLooping(true);	
+	        mp.prepare();
+		} catch (IOException e) { 
+			return; 
+		}
+		return;
+	}
+	
+	
+	public void setres(String resName, boolean repeate){
+	
+		if(resName.charAt(0) == '/')
+			resName = resName.substring(1);	
+		
+		if(!appTh.getSoundMapKey(resName)){
+			try{
+				
+				if (resName.startsWith("sdcard/") == true) {
+					File myfile = new File(resName);
+					java.io.FileInputStream inbuf = new java.io.FileInputStream(myfile);
+					FileDescriptor fd = inbuf.getFD();
+					
+					mp = new android.media.MediaPlayer();
+					mp.setDataSource(fd);
+					mp.prepare();
+			        if(repeate)
+			        	mp.setLooping(true);	
+				}
+				else {		      
+					android.content.res.AssetFileDescriptor afd = CletActivity.context.getAssets().openFd(resName);
+					mp = new android.media.MediaPlayer();
+					mp.setDataSource(afd.getFileDescriptor(), afd.getStartOffset(), afd.getLength());
+					mp.prepare();
+			        if(repeate)
+			        	mp.setLooping(true);	
+					afd.close();
+				}
+		        
+			} catch (IOException e) { 
+				return; 
+			}
+		}else{
+			soundid = appTh.getSoundMapID(resName);
+		}
+		return;
+	}
+		
+	public void play(){
+		if(soundid == -1){
+			if(mp == null)
+				return;
+			mp.setOnCompletionListener(new android.media.MediaPlayer.OnCompletionListener() {                 
+				public void onCompletion(android.media.MediaPlayer arg0) { 
+					if(appTh != null){
+						appTh.BhandleMediaEvent(arg0, MC_MDA_STATUS_END_OF_DATA);
+					}
+				}
+			});
+			mp.start();	
+		}else{
+			appTh.playSoundMap(soundid, mrepeate);
+		}
+	}
+	public void stop(){
+		if(soundid == -1){
+			if(mp == null)
+				return;
+			mp.stop();
+			mp.setOnCompletionListener(null);
+		}else{
+			appTh.stopSoundMap(soundid);
+		}
+	}
+	
+	public void close(){
+			if(mp != null)
+				mp.release();
+			mediaFile = null;
+	}	
+}//end of CMediaPlayer
+
+class AppThread extends Thread 
+{
+	private SurfaceHolder mHolder = null;
+	private Canvas mCanvas = null;
+	private Context context = null;
+	private CletActivity host = null;
+    private android.media.SoundPool soundPool;
+    private java.util.HashMap<String, Integer> soundPoolMap; 
+    
+	public AppThread(CletActivity host) {
+		this.host = host;
+		System.loadLibrary("Launcher");
+		//System.loadLibrary("zoobreaker");
+	}
+
+	public AppThread(CletActivity host, String[] resNames) {
+		this(host);
+		if(resNames != null){
+		   soundPool = new android.media.SoundPool(resNames.length, android.media.AudioManager.STREAM_MUSIC, 0 );
+		   soundPoolMap  =  new java.util.HashMap();
+		   loadSoundPool(resNames);
+		}
+	}
+	
+
+	public void setHolder(SurfaceHolder mHolder) {
+		this.mHolder=mHolder;
+	}
+	
+	public void setCanvas(Canvas canvas) {
+		this.mCanvas = canvas;
+	}
+
+	public void setCanvasSize(int appW, int appH, int plX, int plY, int plW, int plH) {
+		setCanvas(appW, appH, plX, plY, plW, plH);
+	}
+	
+	public void lockCanvas(){
+		mCanvas = mHolder.lockCanvas();
+	}
+	
+	public void unlockCanvas(){
+		host.drawsui();
+		if(mCanvas != null)
+			mHolder.unlockCanvasAndPost(mCanvas);
+
+	}
+
+	public void run(){
+		pltStart(context.getFilesDir().getAbsolutePath(), context.getCacheDir().getAbsolutePath());
+		//jasper host.destroyProcess();
+	}
+	
+	public native void pltStart(String appRootPath, String appCachePath);
+	public native void initCanvas(Canvas canvas); 	
+	public native void setCanvas(int appW, int appH, int plX, int plY, int plW, int plH);
+
+	public native void pltFinish();
+	public native void pltPause();
+	public native void pltResume();
+
+	public native boolean BhandleKeyEvent(int keyevent, int keyCode);
+	public native void BhandleTouchPress(int x, int y,int pid);
+	public native void BhandleTouchDrag(int x, int y,int pid);
+	public native void BhandleTouchRelease(int x, int y,int pid);
+	public native void BhandleMediaEvent(android.media.MediaPlayer mp, int event);	
+	public native void BhandleMotionEvent(int x, int y, int z);
+	//net handling
+	public native void BhandleNetEvent(int p1, int p2);
+		
+	
+	//!@wjl 네트웍 wifi,mobile 상태 체크	//2011/06/15
+	public int getNetworkInfo()
+	{
+		int netinfo = 0;
+		ConnectivityManager mng = (ConnectivityManager)this.context.getSystemService(Context.CONNECTIVITY_SERVICE);
+		NetworkInfo ni = mng.getNetworkInfo(ConnectivityManager.TYPE_WIFI);
+		boolean isWifi = false;
+		boolean isMobile = false;
+		if(ni!=null)
+		{
+			 isWifi = ni.isConnectedOrConnecting();
+		}
+		if(isWifi)
+		{
+			netinfo = 1;
+		}else{
+			ni = mng.getNetworkInfo(ConnectivityManager.TYPE_MOBILE);
+			if(ni!=null)
+			{
+				isMobile = ni.isConnectedOrConnecting();
+				if(isMobile)
+				{
+					netinfo = 2;
+				}
+			}
+		}
+		return(netinfo);
+	}
+	
+		
+	
+	public void setContext(Context appContext) {
+		this.context = appContext;
+	}
+	
+	public byte[] getResZip(){
+		String extResPath = AppProperty.getString("ext_res");
+
+		if (extResPath == null)
+			return getAssetResZip();
+		return getExtResZip(extResPath);
+	}
+	
+//	public byte[] getResZip(){
+	public byte[] getAssetResZip(){
+		try { 
+			InputStream is = context.getAssets().open("res.dat"); 
+	
+			// We guarantee that the available method returns the total 
+			// size of the asset... of course, this does mean that a single 
+			// asset can't be more than 2 gigs. 
+			int size = is.available(); 
+	
+			// Read the entire asset into a local byte buffer. 
+			byte[] buffer = new byte[size]; 
+			is.read(buffer); 
+			is.close();
+			return buffer;
+		} catch (IOException e) { 
+			// Should never happen! 
+			throw new RuntimeException(e); 
+		} 
+	}
+	
+	
+	public byte[] getExtResZip(String resPath){
+		try { 
+			File myfile = new File(resPath+"res.dat");
+			java.io.FileInputStream inbuf = new java.io.FileInputStream(myfile);
+			FileDescriptor fd = inbuf.getFD();
+
+			int size = inbuf.available(); 
+	
+			// Read the entire asset into a local byte buffer. 
+			byte[] buffer = new byte[size]; 
+			inbuf.read(buffer); 
+			inbuf.close();
+			return buffer;
+		} catch (IOException e) { 
+			// Should never happen! 
+			throw new RuntimeException(e); 
+		} 
+		
+	}
+
+	public CMediaPlayer createMedia(int id){
+		CMediaPlayer mp = new CMediaPlayer(context.getCacheDir(),id, this);
+		return mp;
+	}
+	
+	public void writeMedia(CMediaPlayer player, byte[] data, boolean repeate){
+		player.wirtedata(data, repeate);
+		player = null;
+	}
+	
+	public void setresMedia(CMediaPlayer player, String resName, boolean repeate){
+		player.setres(resName, repeate);
+		player = null;
+	}	
+	public void playMedia( CMediaPlayer player){
+		player.play();
+		player = null;
+	}		
+	public void stopMedia( CMediaPlayer player){
+		player.stop();
+		player = null;
+	}
+	
+	public void closeMedia(CMediaPlayer player){
+		player.close();
+		player = null;
+	}
+	
+	private static android.media.AudioManager getAudioManager() {
+		android.media.AudioManager am = (android.media.AudioManager) CletActivity.context.getSystemService(android.content.Context.AUDIO_SERVICE);
+		return am;
+	}	
+	public void setVolumeMedia(int volume){
+		android.media.AudioManager am = getAudioManager();
+		int streamType = android.media.AudioManager.STREAM_MUSIC;
+//		am.setStreamVolume(streamType, (volume*am.getStreamMaxVolume(streamType))/100, 0);		
+		
+		if(volume > 0 && MediaBridge.volum_onoff_mode)
+			am.setStreamVolume(streamType, am.getStreamVolume(streamType), 0);
+		else{
+			am.setStreamVolume(streamType, (volume*am.getStreamMaxVolume(streamType))/100, 0);
+		}
+		return;	
+	}
+	
+	public int getVolumeMedia() {
+		android.media.AudioManager am = getAudioManager();
+		int streamType = android.media.AudioManager.STREAM_MUSIC;
+		return (am.getStreamVolume(streamType)*100)/am.getStreamMaxVolume(streamType);						
+	}
+	
+	public int getMuteState(String cateID) {
+		android.media.AudioManager am = getAudioManager();
+		if (cateID.compareTo("RING") == 0){
+			int muteState = am.getRingerMode();
+			if (muteState == android.media.AudioManager.RINGER_MODE_NORMAL){
+				if( am.getStreamVolume(android.media.AudioManager.STREAM_RING) == 0)
+					return 1;
+				return 0;
+			}
+			return 1;
+		}
+		return 0;						
+	}
+
+	public void vibrator(int level, int duration) {
+		try{
+			android.os.Vibrator vib = (android.os.Vibrator) CletActivity.context.getSystemService(
+        		android.content.Context.VIBRATOR_SERVICE);
+			if((level==0)&&(duration==0))
+				vib.cancel();
+			else
+				vib.vibrate(duration);
+		}catch(SecurityException e)
+		{
+			return;
+		}
+	}
+	
+	public void enableSensor(boolean isSet) {
+		 host.enableSensor(isSet, true);
+	}
+	
+	public void backlighton(int id, int color, int duration) {
+		 BacklightManager.on(id, color, duration);
+	}
+	
+	public void backlightoff() {
+		 BacklightManager.off();
+	}
+	
+	public void backlightalwayson() {
+		 BacklightManager.alwaysOn();
+	}
+	
+	public void suiinit( ){
+		
+	}
+	public void suishow(String name){
+		host.suishow(name);
+		name = null;
+	}
+	
+	public void suihide(String name){
+		host.suihide(name);
+		name = null;
+	}
+	public void suihideall(){
+		host.suihideall();
+	}		
+
+	public String suiGetValue(int componentType, String name){
+		String ret = host.suiGetValue(componentType, name);
+		name = null;
+		return ret;
+	}
+	public void suiSetValue(int componentType, String name, String v){
+		host.suiSetValue(componentType, name, v);
+		name = null;
+		v = null;
+	}
+	
+	public String getInformation(String command) {
+		return BeyondBridge.getSystemProperty0(command);
+	}
+	public boolean getSoundMapKey(String resName){
+		if(soundPoolMap == null)
+			return false;
+		return soundPoolMap.containsKey(resName);
+	}
+	
+	public int getSoundMapID(String resName){
+		int ret = -1;
+		if(soundPoolMap == null)
+			return -1;
+		if(resName == null)
+		{
+			return -1;
+		}
+		try{
+			ret =  soundPoolMap.get(resName);
+		}catch(Exception e)
+		{
+			e.printStackTrace();
+			return -1;
+		}
+		return ret;
+		
+	}
+
+	//<-- 7/5
+	//!@wjl 추가 soundpool을 사용하기 위함
+	public static int playSoundid = -1;
+	public static boolean PlaySoundloop = false;
+	public void playSoundMap0(int soundfileidx,boolean repeat)
+	{
+	
+		int soundid = getSoundMapID("snd/"+soundfileidx+CletActivity.s_pool_type);
+//		Log.i("SOUND","playSound:"+soundid+",fileidx:"+soundfileidx);
+		playSoundid = soundid;
+		PlaySoundloop = repeat;
+		
+		if(soundid!=-1){
+			playSoundMap(soundid,(boolean)repeat);
+		}
+	}
+	
+	public void stopSoundMap1()//마지막플레이한 sound stop
+	{
+//		Log.i("SOUND","stopSoundMap1:"+playSoundid);
+		
+		if(playSoundid!=-1) 
+		{
+			stopSoundMap(playSoundid);
+			playSoundid=-1;
+		}
+	}
+	public void stopSoundMap0(int soundfileidx)
+	{
+		int soundid = getSoundMapID("snd/"+soundfileidx+CletActivity.s_pool_type);
+//		Log.i("SOUND","StopSound:"+soundid);
+		stopSoundMap(soundid);
+		playSoundid = -1;
+	}
+	//-->
+	
+	
+	public static MediaPlayer player;
+	
+	public void playSoundMap(int soundid, boolean repeate){
+//		Log.i("SOUND","playSoundMap:"+soundid+"__________repeate = "+repeate);
+	
+////		if(Gostop.MediaPlayer_Type){		//여비서맞고
+//		if(art.MediaPlayer_Type){		//아인슈타인따라잡기
+//			if(repeate){
+//				//사운드 강제수정 부분
+//				
+////				if(soundid == 42)		//여비서맞고
+////					return;
+////				else
+////					player = MediaPlayer.create(BeyondActivity.context, com.mobicle.gostop.R.raw.s_01+(soundid-1));
+////
+////				player.setLooping(true);
+////				player.setVolume(1.0f * 1, 1.0f * 1);
+////				player.start();
+//			}
+//			else{
+//				soundPool.play(soundid, (float)1.0, (float)1.0, 1, 0, (float)1);
+//			}
+//		}else{
+			if(repeate){
+				soundPool.play(soundid, (float)1.0, (float)1.0, 1, -1, (float)1);
+				playSoundid = soundid;
+			}
+			else{
+				soundPool.play(soundid, (float)1.0, (float)1.0, 1, 0, (float)1);
+			}
+//		}
+	
+	}
+	
+	public void stopSoundMap(int soundid){
+//		Log.i("SOUND","stopSoundMap:"+soundid);
+		
+//		if(Gostop.MediaPlayer_Type){
+//		if(art.MediaPlayer_Type){
+//			if(PlaySoundloop){
+//				player.stop();
+//				player.release();
+//				player = null;
+//			}
+//			else{
+//				soundPool.stop(soundid);
+//			}
+//		}else{
+			soundPool.stop(soundid);
+//		}
+
+	}
+	
+	private void loadSoundPool(String[] resNames){ 
+		String resPath = AppProperty.getString("ext_res");
+		if(resNames != null){
+			for(int i = 0; i<resNames.length; i++){
+				try{
+					String resName = resNames[i];
+					if (resPath == null){
+						android.content.res.AssetFileDescriptor afd = CletActivity.context.getAssets().openFd(resName);
+						int soundid = soundPool.load(afd.getFileDescriptor(), afd.getStartOffset(), afd.getLength(), 1);
+						//Log.i("TEST","loadSoundPool:"+soundid+","+resName);
+						afd.close();
+						soundPoolMap.put(resName, soundid);
+					}
+					else {
+						int soundid = soundPool.load(resPath+resNames[i], 1);						
+						soundPoolMap.put(resPath+resName, soundid);
+					}
+				} catch (IOException e) {
+					e.printStackTrace();
+					//Log.i("ERROR","loadSoundPool");
+					return; 
+				}
+			}
+		}
+	}		
+	public void drawRightLogoI(int restDays){//!@wjl CHK
+		int x = 35;
+		int y = 40;
+		int fontsize = 15;
+		int h = fontsize + 5; // font size + 여백
+
+		while(mHolder == null) {
+			try {
+				java.lang.Thread.sleep(100);
+			}
+			catch(Exception e) {
+			}
+		}
+
+		Canvas canvas = mHolder.lockCanvas();
+
+		TextPaint paint = new TextPaint();
+		Typeface tf = Typeface.create(Typeface.DEFAULT , Typeface.NORMAL);
+		paint.setTextSize(fontsize);
+		paint.setTypeface(tf);
+		paint.setSubpixelText(true);
+		paint.setAntiAlias(true);
+		paint.setColor(Color.WHITE);
+		paint.setStrokeWidth(canvas.getWidth());
+		paint.setStrokeCap(Paint.Cap.ROUND);
+
+		if(restDays > 0) {
+			canvas.drawText("License will be expired "+restDays+" days after.", x, y, paint);
+			y += h;
+			canvas.drawText("To continue testing,", x, y, paint);
+			y += h;
+			canvas.drawText("Touch the screen !!!", x, y, paint);
+		}
+		else {
+			canvas.drawText("License  alredy expired !!!", x, y, paint);
+			y += h;
+			canvas.drawText("Get the new libraries.", x, y, paint);
+		}
+
+		y = 180;
+		canvas.drawText("This application must be used for", x, y, paint);
+		y += h;
+		canvas.drawText("  non-commercial only.", x, y, paint);
+		y += h;
+		canvas.drawText("If you want to commercial use,", x, y, paint);
+		y += h;
+		canvas.drawText("  contact to biz@beyonde.co.kr", x, y, paint);
+		y += h;
+		canvas.drawText("       or        www.beyonde.co.kr", x, y, paint);
+
+		mHolder.unlockCanvasAndPost(canvas);
+	}
+	
+	public void drawBeyondLogo(){//!wjl CHK
+
+                //if(AppProperty.getInt("skip_blog") != 1) {
+                //환경세팅 오류 위가 원본소스 위에서 안걸려서 1을 0으로 수정
+		if(AppProperty.getInt("skip_blog") != 0) {
+			Bitmap logo =  SUIBase.loadImage("fl.bl");
+			
+			while(mHolder == null) {
+				try {
+					java.lang.Thread.sleep(1);
+				}
+				catch(Exception e) {
+				}
+			}
+	
+			Canvas canvas = mHolder.lockCanvas();
+	
+			Paint paint = new Paint();
+			canvas.drawColor(Color.WHITE);
+			float x = (canvas.getWidth()-logo.getWidth())/2;
+			float y = (canvas.getHeight()-logo.getHeight())/2;
+			canvas.drawBitmap(logo, x, y, paint);
+	
+			mHolder.unlockCanvasAndPost(canvas);
+		}
+	}
+
+	private static DialogInfo m_dlgInfo;	
+	public void knlshowExitDlg(char[] title, char[] error)
+	{
+		m_dlgInfo = new DialogInfo();
+		m_dlgInfo.content = new String(error);
+		m_dlgInfo.title = new String(title);
+		m_dlgInfo.type = 11;
+
+		m_dlgInfo.listener =  new DialogInterface.OnClickListener(){
+			public void onClick(DialogInterface dialog, int which) {
+				if(m_dlgInfo != null) {
+					dialog.dismiss();
+					m_dlgInfo = null;
+				}
+				if(which == DialogInterface.BUTTON_POSITIVE) {
+					m_dlgInfo = null;
+					host.finish();
+					return;
+				}
+			}}; 				
+		BeyondActivity.showDialog(m_dlgInfo);
+	}
+
+	public void finish() {
+		host.finish();
+	}
+	
+	//!@wjl SKT INAPP j->c 
+	public native void BhandleBuyEvent(int arg0,int arg1);
+//	public native void BhandleBuyEvent2(int arg0,int arg1,int arg2);
+	//!@wjl
+	//과금 pid 설정
+	public void setBuyItem(String pid,String pName)
+	{
+		Log.i("BUYITEM", "=======pid : "+pid+"_pName : "+pName);
+		host.buyItem(pid,pName);
+		//BeyondActivity.getHandler2().sendMessage(msg);
+	}
+	
+	public void setBuyItem(String pid,String pName, String send_data)
+	{ 
+		host.buyItem(pid,pName,send_data);
+		//BeyondActivity.getHandler2().sendMessage(msg);
+	}
+	
+	//!@wjl web 출력
+	
+	public void showWeb(String url)
+	{
+		if(url!=null)
+		{
+			Rect rc = new Rect();
+			rc.set(0,0,1,1);
+			Message msg = new Message();
+			MessageInfo msgInfo = new MessageInfo();
+			
+			msgInfo.command = MessageInfo.MIC_WEBVIEW;
+			msgInfo.subCommand = MessageInfo.MISC_CREATE;
+			msgInfo.rc = new Rect(rc);
+			msgInfo.stringValue = url;
+			
+			msg.what = BeyondActivity.MESSAGE;
+			msg.obj = msgInfo;
+			
+			BeyondActivity.getHandler2().sendMessage(msg);
+		}else{
+			
+		}
+	}
+	
+	public int readCount = 0;
+	public int writeCount = 0;
+	//!@network test
+	public int TMethodCall()
+	{
+//		Log.i("TEST","OpenURL");
+		this.OpenURL("http://m.nate.com");
+		return 0;
+	}
+	//////////////////////////////////////////////////////////////////////
+	
+	public static boolean isConnected = false;  
+	//wipic network 
+	
+	ArrayList<MySocket> socketMg = new ArrayList<MySocket>();  
+	
+	public int netSocket(int  domain,int  type)
+	{
+		
+		MySocket soc = new MySocket();
+		soc.setOption(domain,type);// type == 1 tcp,2 udp
+		
+//		Log.i("TEST","JAVA_MC_netSocket start:"+soc.hashCode());
+		{
+			socketMg.add(soc);
+			return soc.hashCode();
+		}
+		
+	}
+	
+	public MySocket findSocket(int fd)
+	{
+		MySocket msoc = null;
+		if(fd>=0)
+		{
+			int l = socketMg.size();
+			for(int i = 0;i<l;i++)
+			{
+				msoc = socketMg.get(i);
+				if(msoc!=null){
+					if(msoc.hashCode() == fd)
+					{
+						return msoc;
+					}
+				}
+			}
+		}
+		return null;
+	}
+	
+	
+	public int netSocketConnect ( int  fd,String  addr,int  port,int  param)
+	{
+		MySocket msoc = findSocket(fd);
+			
+		if(msoc!=null)
+		{
+			msoc.CBconnect = param;
+			msoc.connect(addr, port);
+			return 0;// 접속 시도 성공.
+		}
+		return -1;
+	}
+	
+	public int netSetWriteCB(int fd,int param)
+	{
+		
+		MySocket msoc = findSocket(fd);
+//		Log.i("TEST","netSetWriteCB("+fd+","+param+") msoc = "+msoc);
+		if(msoc!=null)
+		{
+			msoc.CBwrite = param;
+			
+			return 0;// readCB 등록.
+		}
+				
+		return -1;
+	}
+	
+	public int netSocketWrite(int fd,byte[] w,int len,int param)
+	{
+		MySocket msoc = findSocket(fd);
+		if(msoc!=null)
+			return(msoc.write(w, 0, len));
+		return -1;
+	}
+	public int netSetReadCB(int fd,int param)
+	{
+		MySocket msoc = findSocket(fd);
+//		Log.i("TEST","netSetReadCB("+fd+","+param+") msoc = "+msoc);
+		if(msoc!=null)
+		{
+			msoc.CBread = param;
+			return 0;// readCB 등록.
+		}
+
+		return -1;
+	}
+	
+	public void OpenURL(String url){
+		Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(url)); 
+		JletActivity.context.startActivity(intent);
+	}
+
+	public int netSocketRead(int fd,byte[] r,int len,int param)
+	{
+		MySocket msoc = findSocket(fd);
+		//Log.i("TEST","netSocketRead"); 
+		if(msoc!=null && param!=0)
+		{
+			if(msoc.cs!=null && msoc.cs.isConnected() == false)
+			{
+				return -1;
+			}
+			//Log.i("TEST","netSocketRead 1len = "+len+","+msoc.readBuffer.remaining());
+			
+			if(msoc.outByte!=null)//임시 버퍼모드
+			{
+				//Log.i("TEST","netSocketRead outByte.size = "+len+","+msoc.outByte.size());
+				if(msoc.outByte.size() > 0)
+				{
+					if(msoc.inByte==null){
+						
+						msoc.inByte = new ByteArrayInputStream(msoc.outByte.toByteArray());
+						msoc.outByte.reset();
+						//Log.i("TEST","netSocketRead inBYte = "+msoc.inByte.available()+",outByte:"+msoc.outByte.size());
+					}
+				}
+				if(msoc.inByte==null)
+				{
+					if(len==0)
+					{
+						return 0;
+					}
+					else{
+						return -19;
+					}
+				}
+				else{
+					int l = msoc.inByte.available();
+					
+					if(l<len)
+					{
+						len = l;
+					}
+					//Log.i("TEST","netSocketRead inBYte = "+len);
+					len = msoc.inByte.read(r,0,len);
+					if(msoc.inByte.available()<=0)
+					{
+						msoc.inByte = null;
+						readCount++;
+						Log.i("TEST","netSocketRead READ OK END:"+readCount);
+						
+					}
+				}
+				
+				//Log.i("TEST","netSocketRead 1len = "+len);
+				return len;
+			}else{
+				return -19;//woudblock
+			}
+		}
+		return -1;
+	}
+
+	
+	public int netSocketClose(int fd)
+	{
+		MySocket msoc = findSocket(fd);
+		Log.i("TEST","netSocketClose fd="+fd+msoc);
+		try {
+			if(msoc!=null)
+			{
+				Log.i("TEST","netSocketClose OK");
+				msoc.close();
+				return 0;
+			}
+		} catch (Exception e) {
+			// TODO Auto-generated catch block
+			Log.i("ERROR","netSocketClose ERROR:");
+			e.printStackTrace();
+			return -1;
+		}
+		return -1;
+	}
+	
+	public int netClose()
+	{
+		int l=socketMg.size();
+		MySocket msoc = null;
+		for(int i = 0;i<l;i++)
+		{
+			try {
+				msoc = socketMg.get(i);
+				Log.i("TEST","netClose :"+i+msoc);
+				if(msoc!=null)
+				{
+					msoc.close();
+					msoc = null;
+				}
+			} catch (Exception e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			}
+		}
+		socketMg.clear();
+		return 0;
+	}
+	//외부에서  접속 콜백으로 접속 시도
+	public void MyScoket_connection(Object obj)
+	{
+		if(obj!=null)
+		{
+			MySocket msc = (MySocket)obj;
+			msc.connection();
+		}
+	}
+	
+			
+}//end of AppThead

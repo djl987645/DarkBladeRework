@@ -1,0 +1,205 @@
+Signature-Version: 1.0
+Created-By: 1.0 (Android SignApk)
+SHA1-Digest-Manifest: VzIbkb30Ze1T8GOzM+HD3gZlIV8=
+
+Name: res/drawable-hdpi/popup_bg_top_left.png
+SHA1-Digest: +Moi4yUklKj5018rncLxDyAMSqg=
+
+Name: assets/snd/12.ogg
+SHA1-Digest: 1ycB8RDNB/7JEDY3Q1gjQLOGUBU=
+
+Name: res/layout/dialog_pay.xml
+SHA1-Digest: tNtrMh03QuRwe+cjxYPeJx9NKkI=
+
+Name: res/drawable-hdpi/popup_bg_botton_right.png
+SHA1-Digest: 9C0su/uFKsWT2rFliUgjEUZh2Lk=
+
+Name: assets/res_pad/screen.cfg
+SHA1-Digest: Kmy6ClS/pp+a1nmgfSItI/l6WUE=
+
+Name: assets/snd/8.ogg
+SHA1-Digest: CVNykC1cQ2G/lpgjhms0O9xBSCw=
+
+Name: assets/snd/21.ogg
+SHA1-Digest: gNWEn205QsPc9B9sPXyicZ+2zAs=
+
+Name: res/drawable-hdpi/a_inputbox_n.png
+SHA1-Digest: foPZ3b5q8HOrJL7bd6NF3ZDODTY=
+
+Name: assets/snd/29.ogg
+SHA1-Digest: C/UuLhO2WN7YpXwKdR5e4taUX68=
+
+Name: assets/snd/9.ogg
+SHA1-Digest: Ut952ztsO5sD9rT33xUX5T5Ttbo=
+
+Name: assets/snd/37.ogg
+SHA1-Digest: wisWJDv0O6pBpojToUdWvyGQjxc=
+
+Name: assets/snd/11.ogg
+SHA1-Digest: alYJMT/6+sWxLO5QaQszlkXaaHo=
+
+Name: assets/snd/20.ogg
+SHA1-Digest: 3gPr6PWeyYCSY3QwFdqUi1z39rM=
+
+Name: com/beyond/BeyondActivity.java.bak
+SHA1-Digest: NakO3XLzYQnx+hWR+Xn0dpeuFzY=
+
+Name: res/drawable-hdpi/popup_btn_sel.png
+SHA1-Digest: lhPFrsp3SoKH3I30bLLbox+hrj4=
+
+Name: assets/snd/23.ogg
+SHA1-Digest: hWRauZuZhmpd+JkS8JKPBKDrslQ=
+
+Name: assets/snd/36.ogg
+SHA1-Digest: KEeNB7IhRE3llShvlAIqLW69PQQ=
+
+Name: assets/res_pad/property.cfg
+SHA1-Digest: gPDJLCQl5t2Wd6sL2qx5IQgJ3bA=
+
+Name: assets/snd/10.ogg
+SHA1-Digest: TkXGgm2dumSUHvWo/LLzdkvXDpA=
+
+Name: res/drawable-hdpi/popup_btn.png
+SHA1-Digest: eFKM8otP0XN/1K4YJ+/j21EEZuo=
+
+Name: res/drawable/icon.png
+SHA1-Digest: gQLKZPIXQdI2rUqyE/Z8igokw7w=
+
+Name: res/layout/dialog_select.xml
+SHA1-Digest: bcB6YvAjY8cq6Jk8VNwZ/HRQdjk=
+
+Name: res/drawable-hdpi/popup_bg_top_right.png
+SHA1-Digest: SErypKL1umwsELhYiw0FPalnk90=
+
+Name: assets/snd/5.ogg
+SHA1-Digest: IFQ1YbM3JMkRTAQ0+DqbtTrUbwE=
+
+Name: res/layout/dialog_login.xml
+SHA1-Digest: vXw0sDavjRWzs7v+5GUTgOly6f0=
+
+Name: assets/res.dat
+SHA1-Digest: z+L/LImTODF9A9qwXE7S84/ctt8=
+
+Name: assets/snd/19.ogg
+SHA1-Digest: VlC3iMCoGPV77TLKcCB7V2iR3G8=
+
+Name: res/drawable-hdpi/a_inputbox_p.png
+SHA1-Digest: Ln3SBIpXWYu1MZKUU0rNTPUXDVI=
+
+Name: assets/snd/35.ogg
+SHA1-Digest: H/DmnQl2dZQIFRVZ6cRrB0Uxu/U=
+
+Name: assets/snd/22.ogg
+SHA1-Digest: rRdjBDKTXbN9u+J30uLdk2n5J9I=
+
+Name: assets/snd/6.ogg
+SHA1-Digest: 2RYhQHSjNqfqsd0JUVjd3BxsQjI=
+
+Name: com/beyond/CletActivity.java.bak
+SHA1-Digest: ePiHN30iP9oIDIH48xmkd6RN4A4=
+
+Name: resources.arsc
+SHA1-Digest: nI/NcTJU0tk94MMJLPcit5OxlkY=
+
+Name: assets/snd/40.ogg
+SHA1-Digest: eMfhKI9MBS40bFmx9F5LcQOT548=
+
+Name: assets/snd/18.ogg
+SHA1-Digest: 0vk6s573DwJil3J6v2+WvJHwPBo=
+
+Name: assets/snd/17.ogg
+SHA1-Digest: 4vpyYKvm3zv19ovF6wtpwcA4RKg=
+
+Name: assets/snd/42.ogg
+SHA1-Digest: RFsBf6YEUle8GQpGqWWYcmbObSI=
+
+Name: res/layout/dialog_alert.xml
+SHA1-Digest: S9BVHbSek/kVI++MJCJ00+bp8Ao=
+
+Name: AndroidManifest.xml
+SHA1-Digest: CAvNc9cDK6YxIJIYMWvlR0FjVV0=
+
+Name: res/drawable-hdpi/e_popup_list_bg.png
+SHA1-Digest: ttgEbWTdzBoelJ23Df+Re99Uh4M=
+
+Name: assets/snd/3.ogg
+SHA1-Digest: dlApw5cUasfjFdZ2zteZItj/+7w=
+
+Name: res/drawable-hdpi/e_popup_line.png
+SHA1-Digest: DyqWHAS9aezgXKAriprwF5az+Fg=
+
+Name: assets/snd/25.ogg
+SHA1-Digest: xdzygVYb2P6zVSC+fJkyFmBYg88=
+
+Name: assets/snd/26.ogg
+SHA1-Digest: y5Hvbz/H7v4kKB9gwidOBtiTjS4=
+
+Name: assets/snd/34.ogg
+SHA1-Digest: HWr90e7gM71m1U7nr6TzCWE3gks=
+
+Name: res/drawable-hdpi/e_popup_list_line.png
+SHA1-Digest: pgtUpoyrQOZHzAVwfZkMHZDplUg=
+
+Name: assets/snd/41.ogg
+SHA1-Digest: Ak6KjPvxEJehZDKuKUdD6k+sfZ4=
+
+Name: assets/snd/24.ogg
+SHA1-Digest: XxonhAYlgKVS/PatljdsodpFJcs=
+
+Name: assets/snd/4.ogg
+SHA1-Digest: Cx5hM+niRtG+FUbmwbchIkyXBYY=
+
+Name: res/drawable-hdpi/e_popup_list_p.png
+SHA1-Digest: 7T04fvKDkEiPcJsGytEG7jeQ8pw=
+
+Name: assets/snd/33.ogg
+SHA1-Digest: +JUOmBaEVwDFxaRe+dqgIaDuPcg=
+
+Name: assets/res_pad/fl.bl
+SHA1-Digest: 3MFwg9NIWQE5K/GJNqvWOgET+7c=
+
+Name: lib/armeabi/libLauncher.so
+SHA1-Digest: a/OS4GxMU0xY8P14QnszX/DVFio=
+
+Name: assets/snd/28.ogg
+SHA1-Digest: R3uBXkF6iCmdvHdzjWfNjmr7fkM=
+
+Name: res/drawable-hdpi/a_inputbox_f.png
+SHA1-Digest: R1YK6t4biqAL1SzLsjtDCj4XmZY=
+
+Name: res/drawable-hdpi/popup_bg_botton_left.png
+SHA1-Digest: P+NDOWGwTfPcCjB0LXoUJRvLZqo=
+
+Name: res/layout/main.xml
+SHA1-Digest: l2eC58/zJob+C6gsmW/rtmRyBMg=
+
+Name: assets/snd/1.ogg
+SHA1-Digest: /NsfZz38812JSLH3m0up/F02jB8=
+
+Name: assets/snd/32.ogg
+SHA1-Digest: eIGi3yfz6n58rPItTfLRFrKKv+8=
+
+Name: assets/snd/30.ogg
+SHA1-Digest: qXNyl5BbswlfXoG8nOLzCPhvSXY=
+
+Name: assets/snd/13.ogg
+SHA1-Digest: v4i1rm6AacjsPLBBUhVIUQ/5xwY=
+
+Name: assets/snd/27.ogg
+SHA1-Digest: iLHcB4DG68V1EOn9B89ZNBU4FUs=
+
+Name: assets/snd/14.ogg
+SHA1-Digest: 7ZozA0aD87/xxN1sIGzWmm+9CQE=
+
+Name: assets/snd/2.ogg
+SHA1-Digest: uI8fErJlePC9RycfojPKvDUVUxA=
+
+Name: res/drawable-hdpi/popup_bg.png
+SHA1-Digest: V38zMcmpQ8t1lfshGylEBpDYfzw=
+
+Name: classes.dex
+SHA1-Digest: oN5daZLUh8KLnrbjEomyCDq5o0M=
+
+Name: assets/snd/31.ogg
+SHA1-Digest: 90Sd4QfSNHKP/WGLQlqK+iPP+9k=
+

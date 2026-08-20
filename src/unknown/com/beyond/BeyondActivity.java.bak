@@ -1,0 +1,712 @@
+/*
+ * 20110526	SKT INAPP 과금 적용 Activity
+ */
+
+package com.beyond;
+
+
+
+//import com.admob.android.ads.AdView;
+import com.beyond.ad.AdMgr;
+import com.beyond.screen.KeyPad;
+import com.beyond.screen.Screen;
+import com.beyond.screen.ScreenConfig;
+import com.beyond.util.MessageInfo;
+
+import android.R;
+import android.app.Activity;
+import android.app.AlertDialog;
+
+import android.app.AlertDialog.Builder;
+import android.content.Context;
+import android.content.DialogInterface;
+import android.os.Bundle;
+import android.os.Handler;
+import android.os.Message;
+import android.util.Log;
+import android.view.Display;
+import android.view.KeyEvent;
+import android.view.MotionEvent;
+import android.view.View;
+import android.view.ViewGroup;
+import android.view.WindowManager;
+import android.view.inputmethod.InputMethodManager;
+import android.webkit.WebView;
+import android.widget.AbsoluteLayout;
+import android.widget.Button;
+import android.widget.RelativeLayout;
+import android.widget.Toast;
+import android.content.res.Configuration;
+import android.graphics.Color;
+import android.graphics.Point;
+import android.graphics.Rect;
+import android.hardware.SensorManager;
+import android.content.pm.ActivityInfo;
+
+import android.util.Log;
+import android.widget.Toast;
+
+//SKT 과금 
+//public class BeyondActivity extends SKPurchaseActivity//ImpActivity(과금 없음)//SKPurchaseActivity(SKT과금)//IAPActivity 
+//KT 과금 
+public class BeyondActivity extends KTPurchaseActivity		
+{
+	static public boolean CONFIG_BUILD_SDK = false;
+
+	static final public int RIGHTLOGO_WAITING = 1;
+	static final public int BEYONDLOGO_WAITING = 2;
+	static final public int ALLLOGO_COMPLETED = 0;
+	static int logoState = ALLLOGO_COMPLETED;
+	static int randomKey = 0;
+	static int restDays = 0;
+
+	static JletBridge app = null;
+	String main_class = null;
+	public static Context context = null;
+
+	static boolean isAppCreaed = false;
+	static android.content.res.Configuration config = null;
+
+	protected SensorManager mSensorManager;
+	private Sensor mSensor = null;
+	static ViewGroup vg = null;
+	static InputBox jf = null;
+
+	protected static Handler handler = null;
+	// command for message
+	static final public int EDIT_SETTEXT = 101;
+	static final public int EDIT_SETPOSITION = 102;
+	static final public int EDIT_SHOWSWIP = 103;
+	static final public int SHOWANNUN = 120;
+	static final public int ADD_AD = 200;
+	static final public int REMOVE_AD = 201;
+	static final public int SHOW_AD = 210;
+	static final public int HIDE_AD = 211;
+	static final public int SHOW_DIALOG = 220;
+	static final public int MESSAGE = 300;
+	static final public int EXIT_ACTIVITY = 444;
+	static final public int RETRY_KAFINIT = 445;
+	static final public int APP_START = 501;
+	static final public int TEST_MSG=999;
+	static final public int SHOW_TOAST=998;
+	//!@wjl network handl
+	static final public int SOCKET_CONNECT=1000;
+	
+	protected static Point gameDisplaySize = null;
+
+	static String carrier = null;
+	protected ScreenConfig scrConfig = null;
+	static BeyondActivity instance = null;
+// for zoobreaker	
+	static boolean isAppHandleReturnKey = false; // App handle RETURN_KEY
+	static boolean isAppHandleSIDEKey = false; // App handle SIDE_KEY (MEDIA VOL ONLY)
+
+	/** Called when the activity is first created. */
+	public void onCreate(Bundle savedInstanceState) {
+//			instance = this;
+		context = this;
+		CreateHandler();
+
+		super.onCreate(savedInstanceState);
+
+		carrier = BeyondBridge.getSystemProperty0("carrier");
+		if (carrier.equals("BEYOND")) {
+			String license = BeyondBridge.getSystemProperty0("license");
+			if(license.equals("YES"))
+				CONFIG_BUILD_SDK = true;
+		}
+
+		setTheme(android.R.style.Theme_Black_NoTitleBar_Fullscreen);
+
+		getWindow().requestFeature(android.view.Window.FEATURE_NO_TITLE); 
+		this.getWindow().setFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN ,
+				WindowManager.LayoutParams.FLAG_FULLSCREEN );
+		mSensorManager = (SensorManager) getSystemService(SENSOR_SERVICE);			
+
+		vg = new AbsoluteLayout(this);
+		setContentView(vg);
+
+  		// set keypad configuration
+		Configuration config = getResources().getConfiguration();
+		BeyondBridge.setSystemProperty0("KEYPAD", Integer.toString(config.keyboard));
+		BeyondBridge.setSystemProperty0("HD_KEYPAD_HIDDEN", Integer.toString(config.hardKeyboardHidden));
+
+		//CreateHandler();		
+	}
+	
+	public static void requestAdView(boolean isShow, Rect rc) {
+    	Message msg = new Message();
+    	if(isShow) {
+    		msg.what = ADD_AD;
+    		msg.obj = (Object)rc;
+    	}
+    	else {
+    		msg.what = REMOVE_AD;
+    	}
+    	handler.sendMessage(msg);		
+	}
+	
+	public void onRequestAdView(boolean isShow, Rect rc) {
+		System.out.println("showAdView("+isShow+","+rc+")");
+		if(AdMgr.isSupport() == false)
+			return;
+		
+		if(isShow)
+			AdMgr.getInstance().start(context, vg, rc);
+		else
+			AdMgr.getInstance().stop(vg);
+	}
+	
+	
+	public static void showAdView(boolean isShow) {
+    	Message msg = new Message();
+    	if(isShow) {
+    		msg.what = SHOW_AD;    		
+    	}
+    	else {
+    		msg.what = HIDE_AD;
+    	}
+    	handler.sendMessage(msg);
+	}		
+		
+	public void onShowAdView(boolean isShow) {
+		if(AdMgr.isSupport() == false)
+			return;
+		AdMgr.getInstance().setVisible(isShow);
+	}		
+	
+	public static void showDialog(DialogInfo dlgInfo) {
+		Message msg = new Message();
+		msg.what = SHOW_DIALOG;
+		msg.obj = dlgInfo;
+		handler.sendMessage(msg);
+	}
+	
+	protected void onShowDialog(Object arg) {
+		DialogInfo dlgInfo = (DialogInfo)arg;
+		this.scrConfig.showDlg(dlgInfo.title, dlgInfo.content, dlgInfo.type, dlgInfo.listener);
+	}
+	
+		
+	public void onWindowFocusChanged(boolean hasFocus) {
+		System.out.println("onWindowFocusChanged("+hasFocus+")");
+		if(hasFocus)
+			onAppResume();
+		else
+			onAppPause();
+	}
+	
+	public void onLowMemory() {
+		System.out.println("onLowMemory ... ");
+	}
+	
+	protected void onAppPause() {
+	}
+	
+	protected void onAppResume() {
+		
+	}
+	
+	protected void onResume() {
+		super.onResume();  
+		//onAppResume();
+	}    
+
+	protected void onPause() {
+		super.onPause();
+		//onAppPause();
+	}       
+
+	protected void onStop() {        
+		super.onStop();
+		/*
+		try {
+			com.flurry.android.FlurryAgent.onEndSession(this);
+		}
+		catch (Exception e) {
+			e.printStackTrace();
+		}
+		*/
+	}    
+	
+	protected void onStart () {
+		super.onStart();
+		/*
+		try {
+			com.flurry.android.FlurryAgent.onStartSession(this, "E8ZAPDCJ58VPPWPH9IK9");
+		}
+		catch (Exception e) {
+			e.printStackTrace();
+		}
+		*/
+	}
+
+
+	public static int getAnKeyCode(int key) {
+		int ret = 0;
+
+		switch(key) {
+			case DisplayBridge.MH_KEY_SELECT :
+				ret = KeyEvent.KEYCODE_ENTER;
+				break;
+			case DisplayBridge.MH_KEY_UP:
+				ret = KeyEvent.KEYCODE_DPAD_UP;
+				break;
+			case DisplayBridge.MH_KEY_RIGHT :
+				ret = KeyEvent.KEYCODE_DPAD_RIGHT;
+				break;
+			case DisplayBridge.MH_KEY_LEFT:
+				ret = KeyEvent.KEYCODE_DPAD_LEFT;
+				break;
+			case DisplayBridge.MH_KEY_DOWN :
+				ret = KeyEvent.KEYCODE_DPAD_DOWN;
+				break;
+			case DisplayBridge.MH_KEY_SEND :
+				ret = KeyEvent.KEYCODE_CALL;
+				break;
+			case DisplayBridge.MH_KEY_CLEAR :
+				ret = KeyEvent.KEYCODE_DEL;
+				break;
+			case DisplayBridge.MH_KEY_POUND :
+				ret = KeyEvent.KEYCODE_POUND;
+				break;
+			case DisplayBridge.MH_KEY_ASTERISK  :
+				ret = KeyEvent.KEYCODE_STAR;
+				break;
+			case DisplayBridge.MH_KEY_SOFT1  :
+				ret = KeyEvent.KEYCODE_SOFT_LEFT;
+				break;
+			case DisplayBridge.MH_KEY_SOFT3   :
+				ret = KeyEvent.KEYCODE_SOFT_RIGHT;
+				break;
+			case DisplayBridge.MH_KEY_SIDE_DOWN   :
+				//ret = KeyEvent.KEYCODE_VOLUME_DOWN;
+				break;
+			case DisplayBridge.MH_KEY_SIDE_UP    :
+				//ret = KeyEvent.KEYCODE_VOLUME_UP;
+				break;
+			case DisplayBridge.MH_KEY_CAMERA     :
+				ret = KeyEvent.KEYCODE_CAMERA;
+				break;
+			case DisplayBridge.MH_KEY_0  :
+			case DisplayBridge.MH_KEY_1  :
+			case DisplayBridge.MH_KEY_2  :
+			case DisplayBridge.MH_KEY_3  :
+			case DisplayBridge.MH_KEY_4  :
+			case DisplayBridge.MH_KEY_5  :
+			case DisplayBridge.MH_KEY_6  :
+			case DisplayBridge.MH_KEY_7  :
+			case DisplayBridge.MH_KEY_8  :
+			case DisplayBridge.MH_KEY_9  :
+				ret = key - DisplayBridge.MH_KEY_0 + KeyEvent.KEYCODE_0;            
+				break;
+		}        
+
+		if((key >= DisplayBridge.MH_KEY_QUERTY_A) && (key <= DisplayBridge.MH_KEY_QUERTY_Z))
+			return key - DisplayBridge.MH_KEY_QUERTY_A+KeyEvent.KEYCODE_A;
+
+		return ret;        
+
+	}
+
+	public int getWipiKeyCode(int key) {
+		int ret = 0;
+
+		switch(key) {
+			case KeyEvent.KEYCODE_DPAD_CENTER :
+			case KeyEvent.KEYCODE_ENTER :
+				ret = DisplayBridge.MH_KEY_SELECT;
+				break;
+			case KeyEvent.KEYCODE_DPAD_UP:
+				ret = DisplayBridge.MH_KEY_UP;
+				break;
+			case KeyEvent.KEYCODE_DPAD_RIGHT :
+				ret = DisplayBridge.MH_KEY_RIGHT;
+				break;
+			case KeyEvent.KEYCODE_DPAD_LEFT:
+				ret = DisplayBridge.MH_KEY_LEFT;
+				break;
+			case KeyEvent.KEYCODE_DPAD_DOWN :
+				ret = DisplayBridge.MH_KEY_DOWN;
+				break;
+			case KeyEvent.KEYCODE_CALL :
+				ret = DisplayBridge.MH_KEY_SEND;
+				break;            
+		    case KeyEvent.KEYCODE_MENU :	// 82
+				ret = key;							// for qwertymaster
+		    	break;
+			case KeyEvent.KEYCODE_BACK :	// 4
+				ret = key;							// for qwertymaster
+				break;                
+			case KeyEvent.KEYCODE_DEL :
+			case KeyEvent.KEYCODE_CLEAR  :
+				ret = DisplayBridge.MH_KEY_CLEAR;
+				break;
+			case KeyEvent.KEYCODE_POUND :
+				ret = DisplayBridge.MH_KEY_POUND;
+				break;
+			case KeyEvent.KEYCODE_STAR  :
+				ret = DisplayBridge.MH_KEY_ASTERISK;
+				break;
+			case KeyEvent.KEYCODE_SOFT_LEFT  :
+				ret = DisplayBridge.MH_KEY_SOFT1;
+				break;
+			case KeyEvent.KEYCODE_SOFT_RIGHT   :
+				ret = DisplayBridge.MH_KEY_SOFT3;
+				break;
+			case KeyEvent.KEYCODE_VOLUME_DOWN   :
+				if (isAppHandleSIDEKey) 
+					ret = DisplayBridge.MH_KEY_SIDE_DOWN;
+				break;
+			case KeyEvent.KEYCODE_VOLUME_UP    :
+				if (isAppHandleSIDEKey) 
+					ret = DisplayBridge.MH_KEY_SIDE_UP;
+				break;
+			case KeyEvent.KEYCODE_CAMERA     :
+				ret = DisplayBridge.MH_KEY_CAMERA;
+				break;
+			case KeyEvent.KEYCODE_0  :
+			case KeyEvent.KEYCODE_1  :
+			case KeyEvent.KEYCODE_2  :
+			case KeyEvent.KEYCODE_3  :
+			case KeyEvent.KEYCODE_4  :
+			case KeyEvent.KEYCODE_5  :
+			case KeyEvent.KEYCODE_6  :
+			case KeyEvent.KEYCODE_8  :
+			case KeyEvent.KEYCODE_9  :
+				ret = DisplayBridge.MH_KEY_0 + key - KeyEvent.KEYCODE_0;            
+				break;
+		}        
+		if((key >= KeyEvent.KEYCODE_A) && (key <= KeyEvent.KEYCODE_Z))
+			return DisplayBridge.MH_KEY_QUERTY_A + key-KeyEvent.KEYCODE_A;
+
+		return ret;        
+	}
+
+	protected int getWipiKeyEvent(int action) {
+		int ret = -1;
+
+		switch(action) {
+			case KeyEvent.ACTION_DOWN :
+				ret = EventQueueBridge.KEY_PRESSED;
+				break;
+			case KeyEvent.ACTION_UP  :
+				ret = EventQueueBridge.KEY_RELEASED;
+				break;
+			case KeyEvent.ACTION_MULTIPLE :
+				ret = EventQueueBridge.KEY_REPEATED;
+				break;
+		}
+
+		return ret;    
+	}    
+
+	/*
+	public boolean dispatchKeyEvent(KeyEvent event) 
+	{
+	  int key = getWipiKeyCode(event.getKeyCode());
+	  if(key == 0)
+		  return false;
+
+	  if(event.getKeyCode() == KeyEvent.KEYCODE_ENTER) {
+		  if(jf.objListener != null) {
+			  jf.onPressEnter();
+			  return true;
+		  }
+	  }
+
+	  if(event.getKeyCode() == KeyEvent.KEYCODE_BACK) {
+		  if (carrier.compareTo("KT") == 0) {
+			  if(app != null)
+				app.notifyPaused();
+			  showExitDlg();
+			  //showExitDlgByXml();
+			  return true;
+		  }
+		  if(JletActivity.logoState != JletActivity.ALLLOGO_COMPLETED) {
+			  System.exit(0);
+		  }
+		  else {
+			  // qwerty master : send App MENU,BACK event => 아래 두줄 막아야함
+			  app.notifyDestroyed();
+			  return true;                
+		  }
+	  }
+
+	  // qwerty master : send App MENU,BACK event 
+	  /*        
+	      if((jf != null)&&(jf.objListener != null)
+	      && (event.getKeyCode() != KeyEvent.KEYCODE_BACK) 
+	      && (event.getKeyCode() != KeyEvent.KEYCODE_MENU)) {
+	      return super.dispatchKeyEvent(event);
+	      }
+      *//*
+	  if((jf != null)&&(jf.objListener != null))
+		  super.dispatchKeyEvent(event);	// for IME
+	  
+	  if(JletActivity.logoState != JletActivity.ALLLOGO_COMPLETED) {
+		  return true;
+	  }
+
+	  int action = getWipiKeyEvent(event.getAction());
+	  if(action < 0)
+		  return false;
+
+	  //if(action == EventQueueBridge.KEY_REPEATED) {
+//	  if(test_sensor(key))
+//		  return true;
+	  //}
+
+
+    //Jlet ql = Jlet.getActiveJlet();
+	  sendWipiKeyEvent(action, key);
+
+	  if((event.getKeyCode() == KeyEvent.KEYCODE_VOLUME_DOWN) ||(event.getKeyCode() == KeyEvent.KEYCODE_VOLUME_UP))
+		  return false;
+	  return true;
+	}
+*/
+/*
+	public static int findRawResouce(String fname){
+		int separatorIndex = fname.lastIndexOf("/");
+		fname = (separatorIndex < 0) ? fname : fname.substring(separatorIndex + 1, fname.length());
+		separatorIndex = fname.lastIndexOf(".");
+		fname = (separatorIndex < 0) ? fname : fname.substring(0, separatorIndex);
+		if(fname == null || fname.length() == 0)
+			return 0;
+		if(fname.charAt(0) >= '0' && fname.charAt(0) <= '9')
+			fname = "m"+fname;
+		if(fname.charAt(0) == 'S')
+			fname = "s"+fname.substring(1);
+		int res_id = context.getResources().getIdentifier(fname, "raw", context.getPackageName());
+		//if(res_id == 0)
+    //    res_id = context.getResources().getIdentifier("wave", "raw", context.getPackageName());
+		return res_id;
+	}
+*/
+	public void onConfigurationChanged (Configuration newConfig) {
+		//        System.out.println("onConfigurationChanged orientation:" + newConfig.orientation);
+    //       System.out.println("getRequestedOrientation:" + this.getRequestedOrientation());
+		
+		/*
+       if (this.getRequestedOrientation() == ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE){
+       if(newConfig.orientation == Configuration.ORIENTATION_PORTRAIT)
+       return;
+       }
+       if (this.getRequestedOrientation() == ActivityInfo.SCREEN_ORIENTATION_PORTRAIT){
+       if(newConfig.orientation == Configuration.ORIENTATION_LANDSCAPE)
+       return;
+       }
+       */
+       
+
+		BeyondBridge.setSystemProperty0("HD_KEYPAD_HIDDEN", Integer.toString(newConfig.hardKeyboardHidden));
+		/*    
+	  String keypad = BeyondBridge.getSystemProperty0("KEYPAD");
+	  String hd_keypad = BeyondBridge.getSystemProperty0("HD_KEYPAD_HIDDEN");
+	  System.out.println("KEYPAD : "+keypad);
+	  System.out.println("hardKeyboardHidden : "+hd_keypad);
+	  */      
+		super.onConfigurationChanged(newConfig);
+	}    
+
+	public static View getInputBox() {
+		return BeyondActivity.jf;
+	}
+	
+	boolean enableSensor(boolean isSet, boolean Clet) {
+    	if(isSet) {
+    		if(mSensor != null)
+    			return true;
+    		
+    		mSensor = new Sensor(Clet);
+            mSensorManager.registerListener(mSensor, 
+                    SensorManager.SENSOR_ACCELEROMETER,
+                    SensorManager.SENSOR_DELAY_GAME);      		
+    	}
+    	else {
+    		if(mSensor == null)
+    			return true;
+
+    		mSensorManager.unregisterListener(mSensor);
+    		mSensor = null;
+    	}
+    	
+    	return false;
+    }	
+    
+    protected void onShowAnnun() {
+    }
+    
+    public static Handler getHandler2() {
+    	
+    	return handler;
+    }
+    
+    private WebView mViewWeb = null;
+    
+    public static void onHideSUI() {
+    	BeyondActivity acti = (BeyondActivity) context;
+    	if(acti.mViewWeb != null) {
+    		Message msg = new Message();
+    		MessageInfo msgInfo = new MessageInfo();
+    		
+    		msgInfo.command = MessageInfo.MIC_WEBVIEW;
+    		msgInfo.subCommand = MessageInfo.MISC_REMOVE;
+    		
+    		msg.what = BeyondActivity.MESSAGE;
+    		msg.obj = msgInfo;
+    		
+    		BeyondActivity.getHandler2().sendMessage(msg);    		
+    	}
+    }
+    
+    private void onMsgWebView(MessageInfo msg) {
+    	switch(msg.subCommand) {
+    	case MessageInfo.MISC_CREATE:
+    		mViewWeb = new WebView(this.context);
+    		mViewWeb.loadUrl(msg.stringValue);
+    		mViewWeb.setVisibility(View.INVISIBLE);
+    		//mViewWeb.setVisibility(View.VISIBLE);
+    		vg.addView(mViewWeb, new AbsoluteLayout.LayoutParams(msg.rc.width(), msg.rc.height(), msg.rc.left, msg.rc.top));
+    		//!@wjl vg.addView(mViewWeb,1,1);
+    		break;
+    	case MessageInfo.MISC_REMOVE:
+    		if(mViewWeb != null) {
+    			vg.removeView(mViewWeb);
+    			mViewWeb = null;
+    		}
+    		break;
+    	case MessageInfo.MISC_SHOW:
+    		mViewWeb.setVisibility(View.VISIBLE);
+    		//onMsgWebView(msg);
+    		break;
+    	case MessageInfo.MISC_HIDE:
+    		mViewWeb.setVisibility(View.INVISIBLE);
+    		//onMsgWebView(msg);
+    		break;
+    	}    	
+    }
+    
+	protected void onRetryKafInit(Object arg) {
+	}    
+    
+    void onMessage(MessageInfo msg) {
+    	switch(msg.command) {
+    	case MessageInfo.MIC_WEBVIEW:
+    		onMsgWebView(msg);
+    		break;
+    	}
+    }
+     
+		
+
+	private void CreateHandler() {
+		handler = new Handler(){
+			public void handleMessage(Message msg) {
+				//System.out.println("message.what = "+msg.what);
+				switch (msg.what)
+				{
+				case MESSAGE:
+					onMessage((MessageInfo)msg.obj);
+					break;
+				case EDIT_SETTEXT:
+					if (jf != null)
+						jf.setText((String)msg.obj);
+					break;
+				case EDIT_SETPOSITION:
+					if (jf != null)
+						jf.setSelection(msg.arg1);
+					break;
+				case EDIT_SHOWSWIP:
+					if (jf != null){
+						InputMethodManager imm = (InputMethodManager)getSystemService(INPUT_METHOD_SERVICE);
+						imm.showSoftInput(jf, 0);
+					}
+					break;
+				case EXIT_ACTIVITY:
+					System.exit(0);
+					break;				
+				case ADD_AD:
+					onRequestAdView(true, (Rect)msg.obj);
+					break;						
+				case REMOVE_AD:
+					onRequestAdView(false, null);
+					break;						
+				case SHOW_AD:
+					onShowAdView(true);
+					break;						
+				case HIDE_AD:
+					onShowAdView(false);
+					//onRequestAdView(false, null);
+					break;						
+				case SHOWANNUN:
+					onShowAnnun();
+					//ScreenConfig.getAnnunInfo().height = Integer.parseInt(s);
+					break;
+				case SHOW_DIALOG:					
+					onShowDialog(msg.obj);
+					//ScreenConfig.getAnnunInfo().height = Integer.parseInt(s);
+					break;
+				case RETRY_KAFINIT:					
+					onRetryKafInit(msg.obj);
+					break;
+				case APP_START:
+					appStart();
+					break;
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////
+//!@wjl INAPP
+				case BUY_ITEM:
+					{
+
+						// INSA - 2011.09.07
+						//==================
+						//#########################################################
+						// SKT
+						//#########################################################
+						//String _as[] = (String[])msg.obj;
+						//popPurchaseDlg(_as[0],_as[1]);
+						
+						//#########################################################
+						// KT
+						//#########################################################
+						String _as = (String)msg.obj;
+						purchase(_as);
+						//==================
+
+					}
+					break;
+				case TEST_MSG:
+//					Log.i("TEST","Handler msg : " + msg.obj);
+					break;
+				//case SOCKET_CONNECT:
+				//	{
+				//		netSocketConnect(msg.obj);
+				//	}
+				case SHOW_TOAST:
+					ShowToast((String)msg.obj);
+					break;
+				}
+			}
+		};
+	}
+
+	public void appStart() {
+		// TODO Auto-generated method stub
+		
+	}
+	
+
+	public static void toShowToast(String str) {
+		Message msg = new Message();
+	    msg.what = BeyondActivity.SHOW_TOAST;
+	    msg.obj = str;//addr
+	    BeyondActivity.getHandler2().sendMessage(msg);
+	}
+	
+	public static void ShowToast(String str)
+	{
+		Toast toast = Toast.makeText(BeyondActivity.context, str, Toast.LENGTH_LONG);
+	    toast.show();
+	}
+}
