@@ -1,6 +1,13 @@
 # Changelog
 
-## v19 (2026-08-20)
+## v0 (2026-08-20) — 버전 체계 재정립
+- 이전 v1~v19 실험 버전을 모두 폐기하고 **v0부터 새로 시작**
+- 방침: 원본 게임 코드(libLauncher.so) 수정 금지, 필요한 레거시 라이브러리만 KitKat에서 추출해 동봉
+- 구성 (5종): libLauncher(원본) + libskia + libstlport + libft2 + libcutils(KitKat 원본, 패치 없음)
+- v2 실패(libft2 누락)와 v15~19 실패(이진 패치)에서 얻은 교훈 반영
+- 상세 오류/수정 이력: [DEVELOPMENT_LOG.md](DEVELOPMENT_LOG.md)
+
+## v19 (2026-08-20) — 실험 종료
 - libcutils.so 6개 원자함수 `movs rX,#0` 패치 (v18의 cmp 패치가 무효임을 규명, 레지스터 클리어+Z 플래그 동시 보장)
 - 18종 라이브러리 동봉 (KitKat 추출: libskia, libstlport, libft2, libcutils, libutils, libcorkscrew 등)
 - 결과: libutils 생성자 스핀 해소 → 게임 네이티브 코드 실행까지 성공
