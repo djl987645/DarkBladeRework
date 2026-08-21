@@ -58,3 +58,17 @@
 6. **libLauncher.so(2008) NEEDED**: libc, libstdc++, libm, liblog, libdl, libz, libskia — libcutils 직접 의존 없음
 7. **KitKat libutils.so NEEDED**: libcorkscrew.so 포함 (Android 9에 없음) → libutils는 **시스템 것** 사용이 안전
 8. **v19 APK에 이미 18종 동봉** — libft2/libcutils/libutils/libcorkscrew 포함. v0은 이 구성에서 libcutils만 원본으로 복귀
+
+## v0.4 — 2026-08-21 (라이브러리 전면 교체 + JNI 드리프트 + 이벤트 루프 강제)
+
+**발견/실증**:
+- SkBitmap 레이아웃: GB(android-10)=40B / ICS·JB·KitKat=44B — 2008 libLauncher는 40B 가정. KitKat setConfig가 fConfig(offset 40)·fBytesPerPixel(42) 저장 → 전역 A+40 = B.fMipMap 오염 → 0x20004 SIGSEGV. GB libskia로 교체해 해소
+- ioprio_get/set: Android 11+ libc에서 제거됨. GB libcutils도 ioprio_get 참조 → stub.so(NEEDED 0개) + patchelf로 해소
+- futex 데드락: SkPixelRef::lockPixels가 공유 전역 뮤텍스 → 2.1 allocPixels(락 없음) vs 2.3(락 사용) 의미 차이. pthread_mutex_lock/unlock PLT 베니어 첫 워드 → bx lr(0xE12FFF1E)
+- mNativeCanvas: Android 9에서 Canvas.mNativeCanvas(int) 삭제 → mNativeCanvasWrapper(long, BaseCanvas). GetFieldID 실패 + GetIntField = CheckJNI abort. libLauncher 바이트 패치 (필드명 + 시그니처 I→J + GetLongField + 리터럴 풀). **이것은 "본판 불변" 원칙의 예외 (v0.7과 동일 맥락)**
+- **BH_rlIsShow 함정**: MH_pltStart 이벤트 루프는 `bl BH_rlIsShow` 반환값이 0이 아니면 0x63fe→0x641c→0x63ea 순환하며 startClet을 **영원히 스킵**. 초기 상태에서 rlIsShow 바이트가 0이 아닌 게 원인으로 추정 → 호출부를 movs r0,#0으로 무력화 + 전역 바이트 검사(0x641e~0x6424) NOP로 startClet 보장 실행
+- **중간 산출물 위치**: /tmp/gblibs/ (패치 스크립트 4종 + lib 백업), /tmp/installed_libLauncher.so (기기 추출)
+
+**교훈**:
+- 백트레이스 주소 변화(0x6454→0x63f6→0x63fa)로 이벤트 루프 경로 추적 가능. 스핀 위치가 함수 경계와 정확히 일치해야 신뢰
+- "startClet 실행됐다고 추정"하지 말 것 — 이벤트 루프가 스킵할 수 있음. 백트레이스+패치로 보장 후 다음 단계

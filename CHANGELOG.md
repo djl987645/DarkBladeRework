@@ -35,6 +35,27 @@
 - Java → JNI (libLauncher) → 자체 렌더러 (GL 직접 호출 없음)
 - Android 2.x~4.x에서 정상 구동 (노트4 Android 5~6 성공 기록)
 
+## v0.4 (2026-08-21) — 검은 화면 3중 원인 해소 (라이브러리 전면 교체 + JNI 드리프트 + 이벤트 루프)
+
+### 라이브러리 교체 (GB/Gingerbread 기반으로 전면 재구성)
+- **GB libskia.so 교체** — SkBitmap 40B (KitKat 44B와 레이아웃 불일치로 인한 fMipMap 가비지 0x20004 SIGSEGV 해소)
+- **ioprio_stub.so 생성 + libcutils.so patchelf** — Android 11+ libc에서 제거된 ioprio_get/set syscall 래퍼 해소
+- **GB 8종으로 교체**: libcutils·libemoji·libjpeg·liblog·libskia·libutils·libz + ioprio_stub (KitKat 9종 삭제: libcorkscrew·libexpat·libft2·libgabi++·libgccdemangle·libicui18n·libicuuc·libpng·libstlport)
+- 전부 수동 언프리링크 (GB prelink 절대주소 → R_ARM_RELATIVE)
+
+### 바이너리 패치 (v0.7~v0.8.3 실증 재적용, AD HOC)
+- **뮤텍스 베니어 bx lr 패치** — libskia pthread_mutex_lock/unlock PLT 스텁 첫 워드 → 0xE12FFF1E (SkPixelRef::lockPixels futex 데드락 해소, 단일 스레드 게임이라 안전)
+- **mNativeCanvas JNI 드리프트 패치** — libLauncher: Android 9에서 삭제된 `Canvas.mNativeCanvas(int)` → `mNativeCanvasWrapper(long)` (필드명 문자열 교체 + 시그니처 I→J + GetIntField→GetLongField + 리터럴 풀 갱신) — SIGABRT 해소 (logcat `Accessing hidden field ... mNativeCanvasWrapper:J`로 확정)
+- **이벤트 큐 강제 주입 v2** — startClet 보장 실행:
+  - 0x641e~0x6424 (8B) 전역 바이트 검사 NOP → `c0 46` ×4
+  - 0x63f6~0x63f9 `bl BH_rlIsShow(0x64ff4)` → `movs r0,#0; nop` — rlIsShow 전역 바이트가 0이 아니면 startClet이 영원히 스킵되는 구조 무력화
+
+### 검증 상태
+- 크래시 3종 해소 (0x20004 SIGSEGV / futex 데드락 ANR / mNativeCanvas SIGABRT)
+- CletActivity onCreate → AppFrameBuffer SurfaceView 생성(1280x684) → setCanvasSize(initCanvas) → AppThread.start() → Thread-2 이벤트 루프 가동
+- 백트레이스: Thread-2가 MH_pltStart 루프(0x63fa)에서 정상 순환 = startClet 경로 통과
+- **잔여**: 리소스 로드 경로(HERMES_DBG) 미진입 — startClet 내부 초기화 단계에서 리소스 로드 전 정지 추정 (다음 사이클 과제)
+
 ## v0.3 (2026-08-21) — DRM 우회 + 이벤트 큐 강제 주입
 
 - KtDrmCheckActivity DrmCheck() 항상 성공 패치 (DRM NPE 크래시 해결)
