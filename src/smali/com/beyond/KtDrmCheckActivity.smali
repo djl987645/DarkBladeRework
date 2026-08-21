@@ -107,6 +107,10 @@
 
     .prologue
     .line 71
+    const/4 v0, 0x0
+
+    return v0
+
     invoke-static {}, Lcom/kaf/KafManager;->getInstance()Lcom/kaf/KafManager;
 
     move-result-object v1

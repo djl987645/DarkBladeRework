@@ -688,10 +688,29 @@
 .end method
 
 .method public static getResource(Ljava/lang/String;)Ljava/io/InputStream;
-    .locals 5
+    .locals 8
     .param p0, "name"    # Ljava/lang/String;
 
     .prologue
+    # HERMES_DBG: getResource 로그
+    const-string v5, "HERMES_DBG"
+
+    new-instance v6, Ljava/lang/StringBuilder;
+
+    invoke-direct {v6}, Ljava/lang/StringBuilder;-><init>()V
+
+    const-string v7, "JletActivity.getResource: "
+
+    invoke-virtual {v6, v7}, Ljava/lang/StringBuilder;->append(Ljava/lang/String;)Ljava/lang/StringBuilder;
+
+    invoke-virtual {v6, p0}, Ljava/lang/StringBuilder;->append(Ljava/lang/String;)Ljava/lang/StringBuilder;
+
+    invoke-virtual {v6}, Ljava/lang/StringBuilder;->toString()Ljava/lang/String;
+
+    move-result-object v6
+
+    invoke-static {v5, v6}, Landroid/util/Log;->i(Ljava/lang/String;Ljava/lang/String;)I
+
     .line 251
     sget-object v3, Lcom/beyond/JletActivity;->zipIo:Lcom/beyond/ZipIo;
 

@@ -522,12 +522,33 @@
 .end method
 
 .method protected static getInputStream(Ljava/lang/String;)Ljava/io/InputStream;
-    .locals 7
+    .locals 10
     .param p0, "name"    # Ljava/lang/String;
 
     .prologue
     const/16 v6, 0x2f
 
+    # HERMES_DBG: 리소스 요청 로그
+    const-string v7, "HERMES_DBG"
+
+    const-string v8, "ImageBridge.getInputStream: "
+
+    new-instance v9, Ljava/lang/StringBuilder;
+
+    invoke-direct {v9}, Ljava/lang/StringBuilder;-><init>()V
+
+    invoke-virtual {v9, v8}, Ljava/lang/StringBuilder;->append(Ljava/lang/String;)Ljava/lang/StringBuilder;
+
+    invoke-virtual {v9, p0}, Ljava/lang/StringBuilder;->append(Ljava/lang/String;)Ljava/lang/StringBuilder;
+
+    invoke-virtual {v9}, Ljava/lang/StringBuilder;->toString()Ljava/lang/String;
+
+    move-result-object v8
+
+    invoke-static {v7, v8}, Landroid/util/Log;->i(Ljava/lang/String;Ljava/lang/String;)I
+
+    .line 125
+    if-nez p0, :cond_0
     const/4 v4, 0x1
 
     const/4 v5, 0x0

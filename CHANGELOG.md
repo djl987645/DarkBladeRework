@@ -34,3 +34,15 @@
 - `lib/armeabi/libLauncher.so` (ARMv5 32비트, 텍스트 재배치 포함 가능성)
 - Java → JNI (libLauncher) → 자체 렌더러 (GL 직접 호출 없음)
 - Android 2.x~4.x에서 정상 구동 (노트4 Android 5~6 성공 기록)
+
+## v0.3 (2026-08-21) — DRM 우회 + 이벤트 큐 강제 주입
+
+- KtDrmCheckActivity DrmCheck() 항상 성공 패치 (DRM NPE 크래시 해결)
+- libLauncher.so MH_pltStart 이벤트 큐 강제 진행 (이벤트 타입 5 → startClet 주입, 1회성)
+  - 0x63ea~0x63f9: `02 98 05 28 02 d0 05 20 01 90 02 90 5e f0 fd fd`
+  - 0x6440~0x6443: `00 23 01 93` (타입 리셋)
+- ImageBridge/ZipIo/JletActivity HERMES_DBG 리소스 로드 로그 추가
+- docs/ANALYSIS.md 추가 (검은 화면 원인 규명: BH_eventq_wait 무한 대기)
+- scripts/ 분석 스크립트 추가
+- 결과: Thread-2가 이벤트 큐 대기(S) → 실행(R) 전환, 게임 루프 가동
+- 잔여: 화면 렌더링 정상화 (리소스 로드 경로 진입 실패)
