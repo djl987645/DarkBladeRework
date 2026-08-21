@@ -2,6 +2,25 @@
 
 > **규칙**: 새 버전 작업 전에 반드시 이 파일과 CHANGELOG.md를 확인하여 기존 실수를 반복하지 않는다.
 
+## v0.4a — 2026-08-21 (A9 게이트 + 터치 실증 + 이미지 로드 관문, 작업 중지 스냅샷)
+
+**발견/실증**:
+- A8(게이트 강제 오픈)은 타입 무관 startClet 반복 호출로 이미지 로드 부재 → 폐기. **A9(타입 분기 유지) 채택**, 설치본 md5·바이트 일치 확인(0x641c~0x6448)
+- 이벤트 큐: enqueue(0x61a8)와 wait(0x6140)가 동일 큐 0x1bccfc 사용 (PC-relative 리터럴 0x1b5754+0x12f4 / 0x1b57b8+0x12f4 → .got 0x1bb908). 큐는 MH_pltStart 진입 전 0x631c에서 초기화 (calloc(1,0x18) → malloc(0xc00) 링버퍼 12B×256, cond=0x62f4, mutex=0x60ec — 0x62f4=cond/mutex 표기 착오 정정)
+- **startClet 실행 확정**: HERMES_DBG 3건 (getResZip → getAssetResZip → res.dat loaded, size=3521012) — "0건"은 로그 검색 오판이었음
+- Thread-2: kill -11 tombstone 3회 전부 pthread_cond_wait 정상 대기 (스핀 아님). 그러나 utime ≈25~30틱/s 증가 = cond_wait와 주기 실행 사이클 공존
+- 렌더링: SurfaceFlinger --latency ~30ms 지속 갱신 = 프레임 제출은 정상, **검은 프레임만**
+- 이미지 로드: ImageBridge.getInputStream(531행) 로그 0건 = 게임이 리소스 요청 단계 미진입 (현재 최대 관문)
+- TEXTREL 다이얼로그: 매 기동 재표시 (libskia/libcutils/libemoji/libjpeg/libutils) — 확인 탭(640,566)으로 해제
+
+**교훈**:
+- logcat "0건" 판정은 전체 버퍼로 재검증 (`logcat -d | grep -c`) — `-t`류 필터는 오판 유발
+- `ps -T -p $PID` TID는 $3 ($2는 PID=메인) — $2 파싱으로 메인 스레드 kill -11 사고 (15025/15519/16127)
+- kill -11 반복 샘플링은 동일 백트레이스 3건으로 충분 — 이후 비살상 실측(SurfaceFlinger latency, utime/state) 우선
+- 설치본 검증은 run-as pull → md5/바이트 비교로 확정
+
+---
+
 ## v0 (현재 버전) — 2026-08-20 시작
 
 **방침**: 원본 게임 코드(libLauncher.so)는 절대 수정하지 않는다. 필요한 레거시 라이브러리만 KitKat에서 추출해 동봉한다. 이진 패치(AD HOC) 금지.

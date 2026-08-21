@@ -354,6 +354,10 @@
     .param p1, "event"    # Landroid/view/MotionEvent;
 
     .prologue
+    const-string v6, "DBT"
+    const-string v7, "HERMES_DBG"
+    invoke-static {v7, v6}, Landroid/util/Log;->i(Ljava/lang/String;Ljava/lang/String;)I
+
     const/4 v7, 0x2
 
     const/4 v9, 0x1
@@ -479,6 +483,10 @@
 
     .line 226
     :pswitch_1
+    const-string v6, "DBTP"
+    const-string v7, "HERMES_DBG"
+    invoke-static {v7, v6}, Landroid/util/Log;->i(Ljava/lang/String;Ljava/lang/String;)I
+
     invoke-static {}, Lcom/beyond/CletActivity;->access$4()Lcom/beyond/AppThread;
 
     move-result-object v6

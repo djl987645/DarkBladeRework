@@ -1028,6 +1028,10 @@
 
     .prologue
     .line 1114
+    const-string v4, "HERMES_DBG"
+    const-string v5, "getAssetResZip() called, opening res.dat"
+    invoke-static {v4, v5}, Landroid/util/Log;->i(Ljava/lang/String;Ljava/lang/String;)I
+
     :try_start_0
     iget-object v4, p0, Lcom/beyond/AppThread;->context:Landroid/content/Context;
 
@@ -1049,6 +1053,15 @@
 
     .line 1122
     .local v3, "size":I
+    const-string v4, "HERMES_DBG"
+    new-instance v5, Ljava/lang/StringBuilder;
+    invoke-direct {v5}, Ljava/lang/StringBuilder;-><init>()V
+    const-string v1, "res.dat loaded, size="
+    invoke-virtual {v5, v1}, Ljava/lang/StringBuilder;->append(Ljava/lang/String;)Ljava/lang/StringBuilder;
+    invoke-virtual {v5, v3}, Ljava/lang/StringBuilder;->append(I)Ljava/lang/StringBuilder;
+    invoke-virtual {v5}, Ljava/lang/StringBuilder;->toString()Ljava/lang/String;
+    move-result-object v1
+    invoke-static {v4, v1}, Landroid/util/Log;->i(Ljava/lang/String;Ljava/lang/String;)I
     new-array v0, v3, [B
 
     .line 1123
@@ -1318,10 +1331,14 @@
 .end method
 
 .method public getResZip()[B
-    .locals 2
+    .locals 4
 
     .prologue
     .line 1104
+    const-string v2, "HERMES_DBG"
+    const-string v3, "getResZip() called"
+    invoke-static {v2, v3}, Landroid/util/Log;->i(Ljava/lang/String;Ljava/lang/String;)I
+
     const-string v1, "ext_res"
 
     invoke-static {v1}, Lcom/beyond/AppProperty;->getString(Ljava/lang/String;)Ljava/lang/String;

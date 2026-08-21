@@ -1,5 +1,30 @@
 # Changelog
 
+## v0.4a (2026-08-21) — A9 게이트 재구성 + 터치 파이프라인 실증 + 이미지 로드 관문 규명 (작업 중지 시점 스냅샷)
+
+### 바이너리 패치 (A3~A10 사이클 최종)
+- A8(게이트 강제 오픈, d80fc75d8d91) 폐기 → **A9 타입 분기(8744258da1fb) 채택**:
+  - 0x641c~0x6448 게이트 영역 재구성 — 전역 바이트 검사 NOP(0x641e~0x6424), `cmp r3,#5 → bne 0x6446`, startClet(0xbef8) 호출, 타입 0x10 enqueue 유지
+  - 설치본(1,986,715B)이 로컬 A9와 16진수 완전 일치 확인
+- CletActivity$AppFrameBuffer.smali: DBT/DBTP 터치 진단 로그 추가 (v10 터치 파이프라인 실증)
+
+### 실증된 사실 (진단 결과)
+- **터치 파이프라인 실증**: Press 1회 = BhandleTouchPress JNI 도달 (onTouchDbEvent 단일 경로)
+- **이벤트 큐 확정**: enqueue/wait 동일 큐 0x1bccfc (.bss+0x4d4), 큐 초기화 0x631c @ MH_pltStart 진입 전
+- **Thread-2 = 정상 소비자 대기**: kill -11 tombstone 3회 모두 pthread_cond_wait (BH_thread_cond_wait → BH_eventq_wait → MH_pltStart)
+- **startClet 정상 실행 확정**: HERMES_DBG 3건 (getResZip → getAssetResZip → res.dat loaded, size=3521012) — 21:40/21:50/22:09 세션 모두 동일
+- **렌더링 루프 정상**: SurfaceFlinger --latency ~30ms 간격 지속 갱신 (검은 프레임만 제출)
+- **TEXTREL 다이얼로그 매 기동 재표시**: libskia/libcutils/libemoji/libjpeg/libutils text relocations (경고, 크래시 아님 — "확인" 탭으로 해제 가능, 좌표 640,566)
+
+### 미해결 관문 (다음 세션 과제)
+- **이미지 요청 0건**: res.dat 로드 성공 후 ImageBridge.getInputStream 로그 0건 = 게임이 화면 그리기 단계 미진입
+- **화면 검정**: 렌더링 루프는 도는데 검은 프레임만 제출 (s8_v15 = 순수 검정)
+- **Thread-2 주기 실행**: utime ≈25~30틱/s 증가 (cond_wait와 주기 실행 사이클 공존 — startClet 재진입/시그널 스톰 후보, enqueue 0x64 복원 미수행)
+
+### 로그 검색 교훈
+- "HERMES_DBG 0건" 판정은 `-t`류 필터 오판이었음 — 0건 판정 전 `logcat -d | grep -c` 전체 버퍼 재검증 필수
+- `ps -T -p $PID`의 TID는 $3 (두 번째 컬럼은 PID=메인) — $2로 파싱하면 메인 스레드를 kill -11 하는 사고 발생 (22:15)
+
 ## v0 (2026-08-20) — 버전 체계 재정립
 - 이전 v1~v19 실험 버전을 모두 폐기하고 **v0부터 새로 시작**
 - 방침: 원본 게임 코드(libLauncher.so) 수정 금지, 필요한 레거시 라이브러리만 KitKat에서 추출해 동봉

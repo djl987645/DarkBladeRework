@@ -1260,6 +1260,10 @@
     .param p1, "event"    # Landroid/view/MotionEvent;
 
     .prologue
+    const-string v5, "TOUCH"
+    const-string v4, "HERMES_DBG"
+    invoke-static {v4, v5}, Landroid/util/Log;->i(Ljava/lang/String;Ljava/lang/String;)I
+
     const/high16 v7, 0x3f800000    # 1.0f
 
     const/4 v6, 0x0
@@ -1334,6 +1338,10 @@
     if-nez v0, :cond_2
 
     .line 653
+    const-string v5, "PRESS"
+    const-string v4, "HERMES_DBG"
+    invoke-static {v4, v5}, Landroid/util/Log;->i(Ljava/lang/String;Ljava/lang/String;)I
+
     sget-object v4, Lcom/beyond/CletActivity;->appTh:Lcom/beyond/AppThread;
 
     invoke-virtual {v4, v1, v2, v6}, Lcom/beyond/AppThread;->BhandleTouchPress(III)V
@@ -1347,6 +1355,10 @@
     if-ne v0, v3, :cond_3
 
     .line 657
+    const-string v5, "REL"
+    const-string v4, "HERMES_DBG"
+    invoke-static {v4, v5}, Landroid/util/Log;->i(Ljava/lang/String;Ljava/lang/String;)I
+
     sget-object v4, Lcom/beyond/CletActivity;->appTh:Lcom/beyond/AppThread;
 
     invoke-virtual {v4, v1, v2, v6}, Lcom/beyond/AppThread;->BhandleTouchRelease(III)V
@@ -1360,6 +1372,10 @@
     if-ne v0, v4, :cond_4
 
     .line 661
+    const-string v5, "DRAG"
+    const-string v4, "HERMES_DBG"
+    invoke-static {v4, v5}, Landroid/util/Log;->i(Ljava/lang/String;Ljava/lang/String;)I
+
     sget-object v4, Lcom/beyond/CletActivity;->appTh:Lcom/beyond/AppThread;
 
     invoke-virtual {v4, v1, v2, v6}, Lcom/beyond/AppThread;->BhandleTouchDrag(III)V
