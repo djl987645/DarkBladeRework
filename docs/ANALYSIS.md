@@ -283,5 +283,48 @@ DBG:resload(0x40020)            ← 미진입 (대형 리소스 로드 경로 �
 ② 상태 객체 [0x1BCAF0] 정체 재검증 + 상태값 정확 실측
 ③ 0x632cc(디코더 초기화) 분석 — 플래그 0x27A7B0 설정 주체
 
+## §11. Cycle H — 0x70fe0 SIGILL 해결 + GOT 오염 실측 (2026-08-23)
+
+### 11.1 ARM/Thumb 상태 혼재 규명 (0x2600~0x2a80 = PLT 스텁)
+- **0x2600~0x2a80 영역은 Thumb이 아니라 ARM 상태 코드** — 함수 포인터 점프 스텁
+  - 각 스텁 12B: `add ip, pc, #0x100000` / `add ip, ip, #0xb9000` / `ldr pc, [ip, #imm]!`
+  - ARM 파이프라인(+8): ip = 0x1BB668 고정 → `ldr pc, [ip, #0x2c4]!` → **[0x1BBA8C]**
+- **0x2660 스텁 = [0x1BBA8C] = R_ARM_JUMP_SLOT __aeabi_idiv** (이전 "[0x1BB934]=unlockPixels"는 계산 오류)
+- [0x1BBA8C] 파일 초기값 0x2604 = .plt 시작 (lazy binding 초기값)
+- .plt = 0x2604(크기 0x4c4), .text = 0x2ac8, .got = 0x1BB908
+- blx 0x2660 = ARM 상태 전환 → GOT에서 함수 포인터 로드 → 점프 (PLT 구조)
+
+### 11.2 0x70fe0 SIGILL 해결 (ARM bx lr 패치)
+- 크래시: 0x70fe0("[JNI] javaCall_openURL" 문자열)에서 SIGILL(ARM 미정의 명령)
+- 원인: 함수 포인터가 문자열 주소로 오염 → ARM 상태 점프 → 0x47704770(Thumb bx lr×2가 ARM으로 해석) = 미정의
+- **해결: 0x70fe0~0x70ff0을 ARM `bx lr`(0xE12FFF1E)×4로 채움** — lr(0x6DE89, Thumb 비트 1)로 정상 복귀
+- 주의: Thumb bx lr(7047)로 채우면 ARM 상태에서 0x47704770 = 미정의 → SIGILL 유지 (4j-4g2 이중 패치 버그)
+
+### 11.3 이미지 로드 실측 (creatImg 슬롯)
+- creatImg(0x5f320) 로거 확장: `creatImg sl:%x` (raw_r0=True — 슬롯 포인터 출력)
+- **실측: 슬롯 3개 로드** — sl:c1721110, c1721eb4, c1720f3c (힙, 간격 불규칙 0xDA4/-0x1D4)
+- imgret:27576 (0x6BB8) — 첫 슬롯 이미지 27,576B 로드 성공
+- 슬롯 배열 베이스 = [0x1BBAC6] (GOT 내부 전역 포인터, 런타임에 힙 주소)
+
+### 11.4 __aeabi_idiv GOT 오염 실측 (핵심 발견)
+- mainTimer 픽서에 idiv:%x 로그 추가 → **[0x1BBA8C] = base+0x1BB998 (GOT 엔트리 주소)** 로 오염
+  - base+0x1BB998 = __android_log_print GOT 슬롯 "주소" (함수 주소가 아님)
+  - 이미지 로드 스킵 후에도 동일 → **이미지 로드와 무관한 오염**
+- 결과: 0x2660/0x2a80 스텁이 [0x1BBA8C]에서 GOT 주소를 pc로 로드 → .got 영역 실행 → SEGV_ACCERR (스택/힙 실행으로 표시됨)
+- 크래시 백트레이스: JIT → XGraphics::setAlpha(0x5e148 bl 0x6de80) / UI::_nPopup_Draw(0x5114e bl 0x5e130) 경유
+- lr = 0x114D/0x1153 (문자열 주소) — 함수 포인터가 문자열 주소로도 오염
+
+### 11.5 로거 함정 (이번 사이클 교훈)
+- **mainTimer 로거 코드 확장 시 MT_LIT(리터럴 풀 위치) 갱신 필수** — adr r4가 엉뚱한 위치를 가리켜 r3 오염 크래시
+- **__android_log_print 인자 순서**: r0=prio, r1=tag, r2=fmt, r3=첫 vararg (r2/r3 혼동 시 liblog 내부 크래시)
+- **r12(ip)는 caller-saved** — blx r12 후 재호출 시 재로드 필수
+- 리터럴 오프셋: lit13=0x1BBA8C(@+48), lit14=idiv fmt(@+52)
+
+### 11.6 다음 단계 (Cycle I 후보)
+① **ARM 나눗셈 직접 구현** — 0x76524(완전 제로 블록)에 __aeabi_idiv 루틴 작성,
+   0x2668/0x2a88의 `ldr pc`를 `b <루틴>`으로 교체 (GOT [0x1BBA8C] 의존 제거)
+② [0x1BBA8C]에 GOT 엔트리 주소(base+0x1BB998)를 쓰는 코드 추적 — 오염원 최종 규명
+③ 0x6de80(MC_grpSetContext)/0x5e130(setAlpha) bx lr 무력화 — 크래시 경로 차단 실험 (backtrace 이동 확인됨)
+
 
 
