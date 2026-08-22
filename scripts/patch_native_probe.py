@@ -20,7 +20,6 @@ TARGETS = [
     (0x40020, 'DBG:resload(0x40020)',  0x465F, 0xB5F0, 0x7331c, False),
     (0x5de2c, 'imgslot st:%d',        0x4657, 0xB5F0, 0x7335c, True),
     (0x5f320, 'DBG:creatImg(0x5f320)', 0x465F, 0xB5F0, 0x7339c, False),
-    (0x4b658, 'DBG:resChain(0x4b658)', 0x4657, 0xB5F0, 0x74a00, False),
 ]
 
 def enc_b_t2(addr, target):
@@ -58,7 +57,15 @@ MT_FMT_ADDR = str_off          # mainTimer용 "st:%d" 문자열 주소
 str_off += len('st:%d') + 1
 while str_off % 4 != 0:
     str_off += 1
-print('문자열: tag=0x%05x, end=0x%05x, mt_fmt=0x%05x' % (MSG_TAG, str_off, MT_FMT_ADDR))
+RC_FMT_ADDR = str_off          # resChain용 "rcst:%d" 문자열 주소
+str_off += len('rcst:%d') + 1
+while str_off % 4 != 0:
+    str_off += 1
+OBJ_FMT_ADDR = str_off         # mainTimer용 "obj:%x" (객체 포인터) 문자열 주소
+str_off += len('obj:%x') + 1
+while str_off % 4 != 0:
+    str_off += 1
+print('문자열: tag=0x%05x, end=0x%05x, mt_fmt=0x%05x, rc_fmt=0x%05x, obj_fmt=0x%05x' % (MSG_TAG, str_off, MT_FMT_ADDR, RC_FMT_ADDR, OBJ_FMT_ADDR))
 
 # --- 2. 로거 코드 ---
 loggers = {}
@@ -113,28 +120,28 @@ for addr, msg, second_hw, orig_push, L, slot_mode in TARGETS:
 MT_ADDR = 0xbd28
 MT_L = 0x746c4
 MT_FMT = MT_FMT_ADDR        # 문자열 "st:%d"
-STATE_OBJ = 0x1bcaf0      # [0x1bcaf0] = 객체 ptr, +4 = 상태값
+STATE_OBJ = 0x23ccb0      # 상태 객체 직접 주소 (vaddr, R_ARM_RELATIVE addend — mTimer 0x23ccf8 근처)
 V7_MAINTIMER = 0x1afbd4   # [0xbeb8] — r7 = V7 + pc(0xbd34) = 0x1bb908
 code = bytearray()
 code += struct.pack('<HH', 0xE92D, 0x403F)      # 0x00 push.w {r0-r3, r4, r5, lr}
 code += struct.pack('<H', 0x2004)               # 0x04 movs r0, #4
 pc_adr = (MT_L + 0x0A) & ~3
-imm8 = (MT_L + 0x40 - pc_adr) // 4   # 리터럴 @0x40 (b.w 0x3C~0x3F)
+imm8 = (MT_L + 0x40 - pc_adr) // 4   # 리터럴 @0x40
 assert 0 <= imm8 <= 255
-code += struct.pack('<H', 0xA400 | imm8)        # 0x06 adr r4, 0x3E (리터럴)
-code += struct.pack('<HH', 0xF8D4, 0x1000)      # 0x08 ldr.w r1, [r4]
-code += enc_add_reg(1, 1, 4)                    # tag
-code += struct.pack('<HH', 0xF8D4, 0x2004)      # 0x0E ldr.w r2, [r4, #4]
-code += enc_add_reg(2, 2, 4)                    # fmt
-code += struct.pack('<HH', 0xF8D4, 0x3008)      # 0x14 ldr.w r3, [r4, #8]
-code += enc_add_reg(3, 3, 4)                    # got
+code += struct.pack('<H', 0xA400 | imm8)        # 0x06 adr r4, 리터럴
+code += struct.pack('<HH', 0xF8D4, 0x1000)      # 0x08 ldr.w r1, [r4] = tag
+code += enc_add_reg(1, 1, 4)
+code += struct.pack('<HH', 0xF8D4, 0x2004)      # 0x0E ldr.w r2, [r4, #4] = fmt
+code += enc_add_reg(2, 2, 4)
+code += struct.pack('<HH', 0xF8D4, 0x3008)      # 0x14 ldr.w r3, [r4, #8] = got
+code += enc_add_reg(3, 3, 4)
 code += struct.pack('<HH', 0xF8D3, 0x3000)      # 0x1A ldr.w r3, [r3] = 함수
-code += struct.pack('<HH', 0xF8D4, 0x500C)      # 0x1E ldr.w r5, [r4, #12]
-code += enc_add_reg(5, 5, 4)                    # 0x22 r5 = base+0x1bcaf0
-code += struct.pack('<HH', 0xF8D5, 0x5000)      # 0x26 ldr.w r5, [r5] = 객체 ptr
+code += struct.pack('<HH', 0xF8D4, 0x500C)      # 0x1E ldr.w r5, [r4, #12] = 객체 주소
+code += enc_add_reg(5, 5, 4)
+code += struct.pack('<HH', 0xBF00, 0xBF00)      # 0x26 nop ×2 — 슬롯 경유 없이 직접 접근
 code += struct.pack('<H', 0x2D00)               # 0x2A cmp r5, #0
 code += struct.pack('<H', 0xD001)               # 0x2C beq +2 (객체 0이면 skip — r5=0 로그)
-code += struct.pack('<HH', 0xF8D5, 0x5004)      # 0x2E ldr.w r5, [r5, #4] = 상태값
+code += struct.pack('<HH', 0xF8D5, 0x5000)      # 0x2E ldr.w r5, [r5] = [obj+0] 상태값
 code += struct.pack('<H', 0x4798)               # 0x32 blx r3
 code += struct.pack('<HH', 0xF8D4, 0x7010)      # 0x34 ldr.w r7, [r4, #16] = V7
 code += struct.pack('<HH', 0xE8BD, 0x403F)      # 0x38 pop.w
@@ -153,6 +160,50 @@ while len(code) < 0x58:
 loggers[MT_ADDR] = (MT_L, code)
 print(f'mainTimer 로거 @0x{MT_L:05x}, 상태객체 0x{STATE_OBJ:05x}, V7=0x{V7_MAINTIMER:08x}')
 
+# --- 2c. resChain(0x4b658) 로거 — 상태값 실측 ([0x1bbaac] → obj+4, 리소스 로드 상태 36~60) ---
+RC_ADDR = 0x4b658
+RC_L = 0x74a00
+RC_FMT = RC_FMT_ADDR        # 문자열 "rcst:%d"
+RC_STATE_OBJ = 0x23ccb0     # 상태 객체 직접 주소 (vaddr) — 슬롯 경유 없음, +4 = 리소스 상태
+V7_RESCHAIN = 0x0017029c    # [0x4b9c4] — resChain r7 (0x4b668 add r7,pc → 0x1bb908)
+code = bytearray()
+code += struct.pack('<HH', 0xE92D, 0x40BF)      # 0x00 push.w {r0-r5, r7, lr} — r7 보존!
+code += struct.pack('<H', 0x2004)               # 0x04 movs r0, #4
+pc_adr = (RC_L + 0x0A) & ~3
+imm8 = (RC_L + 0x40 - pc_adr) // 4   # 리터럴 @0x40
+assert 0 <= imm8 <= 255
+code += struct.pack('<H', 0xA400 | imm8)        # 0x06 adr r4, 리터럴
+code += struct.pack('<HH', 0xF8D4, 0x1000)      # 0x08 ldr.w r1, [r4] = tag
+code += enc_add_reg(1, 1, 4)
+code += struct.pack('<HH', 0xF8D4, 0x2004)      # 0x0E ldr.w r2, [r4, #4] = fmt
+code += enc_add_reg(2, 2, 4)
+code += struct.pack('<HH', 0xF8D4, 0x3008)      # 0x14 ldr.w r3, [r4, #8] = got
+code += enc_add_reg(3, 3, 4)
+code += struct.pack('<HH', 0xF8D3, 0x3000)      # 0x1A ldr.w r3, [r3] = 함수
+code += struct.pack('<HH', 0xF8D4, 0x500C)      # 0x1E ldr.w r5, [r4, #12] = 상태객체 주소
+code += enc_add_reg(5, 5, 4)
+code += struct.pack('<HH', 0xBF00, 0xBF00)      # 0x26 nop ×2 — 슬롯 경유 없이 직접 접근
+code += struct.pack('<H', 0x2D00)               # 0x2A cmp r5, #0
+code += struct.pack('<H', 0xD001)               # 0x2C beq +2
+code += struct.pack('<HH', 0xF8D5, 0x5004)      # 0x2E ldr.w r5, [r5, #4] = 상태값
+code += struct.pack('<H', 0x4798)               # 0x32 blx r3
+code += struct.pack('<HH', 0xF8D4, 0x7010)      # 0x34 ldr.w r7, [r4, #16] = V7
+code += struct.pack('<HH', 0xE8BD, 0x40BF)      # 0x38 pop.w {r0-r5, r7, lr} — r7 복원!
+code += struct.pack('<H', 0xB5F0)               # 0x3C push {r4-r7, lr} (원래)
+code += enc_b_t2(RC_L + 0x3C, RC_ADDR + 4)      # 0x3C b.w 0x4b65c
+while (RC_L + len(code)) % 4 != 0:
+    code += b'\x00'
+lit1_off = len(code)
+code += struct.pack('<i', MSG_TAG - (RC_L + lit1_off))            # lit1 tag
+code += struct.pack('<i', RC_FMT - (RC_L + lit1_off))             # lit2 fmt
+code += struct.pack('<i', GOT_LOGPRINT - (RC_L + lit1_off))       # lit3 got
+code += struct.pack('<i', RC_STATE_OBJ - (RC_L + lit1_off))       # lit4 상태객체
+code += struct.pack('<i', V7_RESCHAIN)                            # lit5 V7
+while len(code) < 0x58:
+    code += b'\x00'
+loggers[RC_ADDR] = (RC_L, code)
+print(f'resChain 로거 @0x{RC_L:05x}, 상태객체 0x{RC_STATE_OBJ:05x}, V7=0x{V7_RESCHAIN:08x}')
+
 # --- 3. 기록 ---
 for addr, (L, code) in loggers.items():
     orig = bytes(data[L:L+4])
@@ -165,12 +216,32 @@ for addr, msg, _, _, _, _ in TARGETS:
     data[msg_addrs[addr]:msg_addrs[addr]+len(b)] = b
 b = b'st:%d\x00'
 data[MT_FMT_ADDR:MT_FMT_ADDR+len(b)] = b
+b = b'rcst:%d\x00'
+data[RC_FMT_ADDR:RC_FMT_ADDR+len(b)] = b
+b = b'obj:%x\x00'
+data[OBJ_FMT_ADDR:OBJ_FMT_ADDR+len(b)] = b
 
 # --- 4. 함수 첫 4B 패치 ---
 for addr, (L, _) in loggers.items():
     patch = enc_b_t2(addr, L)
     print(f'패치 0x{addr:05x} → 0x{L:05x}: {bytes(data[addr:addr+4]).hex()} -> {patch.hex()}')
     data[addr:addr+4] = patch
+
+# --- 4b. Cycle F: MC_knlSetTimer(0x6828) 0x6840 beq 0x68d2 → nop ---
+# [obj+0x14]==1(이미 무장)이면 0x68d2에서 -5("already working") 리턴 → 재예약 거부
+# → POSIX 원샷 타이머 만료 후 재장전 없음 → 이벤트 300 중단 → mainTimer 1회 후 정지(데드락)
+# nop 처리로 무장 상태여도 무조건 재예약하도록 강제
+orig_nop = bytes(data[0x6840:0x6842])
+data[0x6840:0x6842] = b'\x00\xbf'
+print(f'패치 0x06840: {orig_nop.hex()} -> 00bf (MC_knlSetTimer 재예약 강제)')
+
+# --- 4c. Cycle F: resChain(0x4b658) 상태 무시 — 0x4b67c~0x4b68e → b.w 0x4b690 ---
+# 상태값 [obj+4]가 가비지(0xE95D0B19)라 디스패치(0x24~0x3c)에 못 미침 → 상태 0x24 핸들러(리소스 로드)로 강제
+orig_disp = bytes(data[0x4b67c:0x4b690])
+data[0x4b67c:0x4b680] = enc_b_t2(0x4b67c, 0x4b690)
+for a in range(0x4b680, 0x4b690, 2):
+    data[a:a+2] = b'\x00\xbf'
+print(f'패치 0x4b67c: resChain 강제 디스패치 (→0x4b690 리소스 로드), 원본 {orig_disp.hex()}')
 
 open(SRC, 'wb').write(data)
 print(f'저장: {SRC} ({len(data)}B)')
