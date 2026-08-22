@@ -188,3 +188,59 @@ draw_Menu 내부(0x325c0)에서는 (-1,5,0,...) 호출 → 사운드(필드1)=5 
   (libLauncher.so 네이티브 __android_log_print 패치 — GOT 0x1bb998 경유 가능,
   liblog.so NEEDED 확인됨) ② 상태 전이 트리거 이벤트 조사.
 
+---
+
+## 9. Cycle B — 네이티브 계측 실측 (2026-08-22)
+
+### 9.1 목적
+libLauncher.so(2008, ARMv5 Thumb)에 __android_log_print 계측을 삽입하여
+**실제 실행 경로**를 확정한다. 대상: draw_Menu(0x32564), draw0(0x16660),
+resload(0x40020), img_slot_dispatch(0x5de2c), creatImageLzma(0x5f320).
+
+### 9.2 계측 설계 (최종 v6)
+- 대상 함수 첫 4B를 Thumb-2 `b.w 로거` (4B)로 교체, 로거가 로그 출력 후
+  **원래 1~2번째 명령 재현 → 함수+4로 복귀** (v3 실패: 함수+2 복귀 시
+  b.w의 반쪽 halfword 실행 → 크래시)
+- **ASLR 대응**: 로거는 PC-relative만 사용. adr로 로거 내부 주소 확보 →
+  리터럴에 "타깃 가상주소 − 리터럴 위치" 오프셋 저장 → add로 런타임 실제 주소 계산
+  (v2 실패: 절대 주소 0x1bb998 직접 접근 → SEGV_MAPERR)
+- **레지스터 보존**: push.w {r0-r3, r4, lr}(일반) / {r0-r3, r5, lr}(draw_Menu)
+  — r4 보존 or 리터럴풀 값 설정. blx __android_log_print 후 pop.w 복원
+- **로거/문자열은 .rodata 검증된 제로 블록에만 배치**
+  (v5 실패: 0x73400~0x734AC의 CP949 메뉴 문자열+16비트 테이블을 덮어 SIGBUS)
+  - 로거 4개(일반): 0x732dc~0x7339c / draw_Menu 로거: 0x746c4 (별도 제로 블록)
+  - 문자열: 0x74858~ (태그 HERMES_DBG + 메시지 5종)
+- 인코딩 함정 (capstone 5.0.7 교차 검증 필수):
+  - Thumb-1 ADD(reg): 0001100 **Rm** Rn **Rd** (필드 순서!)
+  - ADD T2 Rd는 3비트(r0-r7만), Rm은 4비트 — r12는 T2 ADD 불가
+  - ldr.w r3,[r3,#0] = F8D3 3000 (Thumb-1 0x6B18은 capstone이 r0로 오인)
+  - halfword 바이트 순서: 바이트 `5f 46` → halfword 0x465F (LE) — 0x5F46은 ldrsh!
+  - b.w 오프셋 = 실제 배치 주소 기준 (코드 길이와 별개)
+
+### 9.3 실측 결과 (S8 실기, v0.4b+계측)
+```
+getResZip → res.dat loaded(3,521,012B)
+DBG:draw_Menu(0x32564)          ← draw_Menu 진입 확인!
+DBG:imgslot(0x5de2c)  ×4        ← 이미지 슬롯 디스패처 반복 호출
+DBG:creatImg(0x5f320) ×4        ← creatImageLzma 실제 호출!
+DBG:draw0(0x16660)              ← 미진입 (상태 0 아님)
+DBG:resload(0x40020)            ← 미진입 (대형 리소스 로드 경로 미사용)
+```
+- **이미지 로딩이 실제로 발생** (v0.4b ImageBridge 0건과 대비되는 결정적 변화)
+- 크래시 없음, 프로세스 생존, 23프레임 렌더 (검은 화면 유지)
+- 검은 화면 관문 재정의: **이미지 로드 부재가 아니라 "상태0(draw0) 미진입 +
+  그리기/표시 경로" 문제로 좁혀짐**
+
+### 9.4 draw_Menu 로거 충돌 (중요 함정)
+- draw_Menu 로거 포함 시 **SIGBUS(BUS_ADRALN) @ draw_Menu+62 (bl 0x11af8)** 크래시
+- 0x11af8 = 상태 ≥ 0x24일 때 호출되는 Java 콜백 경유 함수 (0x608d8/0x2a80 호출)
+- draw_Menu 로거 제외 시 정상 동작 — 로거의 r4=리터럴풀 값 설정이
+  0x11af8 경로와 충돌하는 것으로 추정 (정확한 메커니즘은 미해명)
+- 현행: draw_Menu 로거 제외 4개 계측이 안정 버전
+
+### 9.5 다음 단계 (Cycle C 후보)
+① draw_Menu 진입 시 상태값 실측 (0x3258c cmp r3,#0x23 분기 직전)
+② creatImageLzma 성공/실패 계측 (0x5f320 진입 후 리턴 경로)
+③ 상태 전이 트리거 이벤트 (터치/타이머) 조사
+
+
