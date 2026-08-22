@@ -16,10 +16,11 @@ MSG_TAG = 0x74858
 
 # (주소, 메시지, 2번째 halfword, 원래 push, 로거 위치, fmt_슬롯_모드)
 TARGETS = [
-    (0x16660, 'DBG:draw0(0x16660)',    0x465F, 0xB5F0, 0x732dc, False),
-    (0x40020, 'DBG:resload(0x40020)',  0x465F, 0xB5F0, 0x7331c, False),
-    (0x5de2c, 'imgslot st:%d',        0x4657, 0xB5F0, 0x7335c, True),
-    (0x5f320, 'DBG:creatImg(0x5f320)', 0x465F, 0xB5F0, 0x7339c, False),
+    (0x16660, 'DBG:draw0(0x16660)',    0x465F, 0xB5F0, 0x732dc, False, False),
+    (0x40020, 'DBG:resload(0x40020)',  0x465F, 0xB5F0, 0x7331c, False, False),
+    (0x5de2c, 'imgslot st:%d',        0x4657, 0xB5F0, 0x7335c, True,  False),
+    (0x5f320, 'DBG:creatImg(0x5f320)', 0x465F, 0xB5F0, 0x7339c, False, False),
+    (0x61066, 'imgret:%d',            0x1C28, 0x1C04, 0x74a58, True,  True),
 ]
 
 def enc_b_t2(addr, target):
@@ -48,7 +49,7 @@ msg_addrs = {}
 str_off += len('HERMES_DBG') + 1
 while str_off % 4 != 0:
     str_off += 1
-for addr, msg, _, _, _, _ in TARGETS:
+for addr, msg, _, _, _, _, _ in TARGETS:
     msg_addrs[addr] = str_off
     str_off += len(msg) + 1
     while str_off % 4 != 0:
@@ -69,7 +70,7 @@ print('문자열: tag=0x%05x, end=0x%05x, mt_fmt=0x%05x, rc_fmt=0x%05x, obj_fmt=
 
 # --- 2. 로거 코드 ---
 loggers = {}
-for addr, msg, second_hw, orig_push, L, slot_mode in TARGETS:
+for addr, msg, second_hw, orig_push, L, slot_mode, raw_r0 in TARGETS:
     b_off = 0x30 if slot_mode else 0x28
     lit_start = b_off + 4
     code = bytearray()
@@ -88,10 +89,14 @@ for addr, msg, second_hw, orig_push, L, slot_mode in TARGETS:
     if slot_mode:
         # 0x1A ldr.w r12, [r3] → r12 = __android_log_print
         code += struct.pack('<HH', 0xF8D3, 0xC000)
-        # 0x1E ldr.w r3, [sp, #0] → r3 = 슬롯 포인터 (원래 r0)
+        # 0x1E ldr.w r3, [sp, #0] → r3 = 원래 r0
         code += struct.pack('<HH', 0xF8DD, 0x3000)
-        # 0x22 ldrb.w r3, [r3, #0x21] → r3 = 슬롯 상태 바이트
-        code += struct.pack('<HH', 0xF8D3, 0x3021)
+        if raw_r0:
+            # 0x22 nop ×2 — r0 값 자체를 로그 (imgret)
+            code += struct.pack('<HH', 0xBF00, 0xBF00)
+        else:
+            # 0x22 ldrb.w r3, [r3, #0x21] → r3 = 슬롯 상태 바이트
+            code += struct.pack('<HH', 0xF8D3, 0x3021)
         # 0x26 blx r12
         code += struct.pack('<H', 0x47E0)
         # 0x28 pop.w
@@ -121,12 +126,14 @@ MT_ADDR = 0xbd28
 MT_L = 0x746c4
 MT_FMT = MT_FMT_ADDR        # 문자열 "st:%d"
 STATE_OBJ = 0x23ccb0      # 상태 객체 직접 주소 (vaddr, R_ARM_RELATIVE addend — mTimer 0x23ccf8 근처)
+STATE_SLOT = 0x1bbaf0     # [0x1bbaf0] = 상태 객체 ptr 슬롯 — 매 틱 복구 (포팅 레이어가 __android_log_print 주소로 덮음)
 V7_MAINTIMER = 0x1afbd4   # [0xbeb8] — r7 = V7 + pc(0xbd34) = 0x1bb908
+MT_LIT = 0x4C             # 리터럴 풀 위치
 code = bytearray()
-code += struct.pack('<HH', 0xE92D, 0x403F)      # 0x00 push.w {r0-r3, r4, r5, lr}
+code += struct.pack('<HH', 0xE92D, 0x407F)      # 0x00 push.w {r0-r6, lr}
 code += struct.pack('<H', 0x2004)               # 0x04 movs r0, #4
 pc_adr = (MT_L + 0x0A) & ~3
-imm8 = (MT_L + 0x40 - pc_adr) // 4   # 리터럴 @0x40
+imm8 = (MT_L + MT_LIT - pc_adr) // 4
 assert 0 <= imm8 <= 255
 code += struct.pack('<H', 0xA400 | imm8)        # 0x06 adr r4, 리터럴
 code += struct.pack('<HH', 0xF8D4, 0x1000)      # 0x08 ldr.w r1, [r4] = tag
@@ -135,27 +142,33 @@ code += struct.pack('<HH', 0xF8D4, 0x2004)      # 0x0E ldr.w r2, [r4, #4] = fmt
 code += enc_add_reg(2, 2, 4)
 code += struct.pack('<HH', 0xF8D4, 0x3008)      # 0x14 ldr.w r3, [r4, #8] = got
 code += enc_add_reg(3, 3, 4)
-code += struct.pack('<HH', 0xF8D3, 0x3000)      # 0x1A ldr.w r3, [r3] = 함수
-code += struct.pack('<HH', 0xF8D4, 0x500C)      # 0x1E ldr.w r5, [r4, #12] = 객체 주소
-code += enc_add_reg(5, 5, 4)
-code += struct.pack('<HH', 0xBF00, 0xBF00)      # 0x26 nop ×2 — 슬롯 경유 없이 직접 접근
-code += struct.pack('<H', 0x2D00)               # 0x2A cmp r5, #0
-code += struct.pack('<H', 0xD001)               # 0x2C beq +2 (객체 0이면 skip — r5=0 로그)
-code += struct.pack('<HH', 0xF8D5, 0x5000)      # 0x2E ldr.w r5, [r5] = [obj+0] 상태값
-code += struct.pack('<H', 0x4798)               # 0x32 blx r3
-code += struct.pack('<HH', 0xF8D4, 0x7010)      # 0x34 ldr.w r7, [r4, #16] = V7
-code += struct.pack('<HH', 0xE8BD, 0x403F)      # 0x38 pop.w
-code += struct.pack('<H', 0xB5F0)               # 0x3C push {r4-r7, lr} (원래)
-code += enc_b_t2(MT_L + 0x3C, MT_ADDR + 4)      # 0x3C b.w 0xbd2c (실제 레이아웃: b.w @0x3C)
+code += struct.pack('<HH', 0xF8D3, 0xC000)      # 0x1A ldr.w r12, [r3] = 함수 (r3은 값 전달용)
+code += struct.pack('<HH', 0xF8D4, 0x500C)      # 0x1E ldr.w r5, [r4, #12] = 객체 주소 오프셋
+code += enc_add_reg(5, 5, 4)                    # 0x22 r5 = B+0x23ccb0
+code += struct.pack('<HH', 0xF8D4, 0x6014)      # 0x24 ldr.w r6, [r4, #20] = 슬롯 주소 오프셋
+code += enc_add_reg(6, 6, 4)                    # 0x28 r6 = B+0x1bbaf0
+code += struct.pack('<H', 0x6035)               # 0x2A str r5, [r6] — 슬롯 복구!
+code += struct.pack('<H', 0x2601)               # 0x2C movs r6, #1
+code += struct.pack('<H', 0x602E)               # 0x2E str r6, [r5] — [obj+0]=1 (게임 상태)
+code += struct.pack('<H', 0x2624)               # 0x30 movs r6, #0x24
+code += struct.pack('<H', 0x612E)               # 0x32 str r6, [r5, #4] — [obj+4]=0x24 (리소스 상태)
+code += struct.pack('<HH', 0xF8D5, 0x5000)      # 0x34 ldr.w r5, [r5] — 상태값
+code += struct.pack('<H', 0x462B)               # 0x38 mov r3, r5 — 값 전달
+code += struct.pack('<H', 0x47E0)               # 0x3A blx r12
+code += struct.pack('<HH', 0xF8D4, 0x7010)      # 0x3C ldr.w r7, [r4, #16] = V7
+code += struct.pack('<HH', 0xE8BD, 0x407F)      # 0x40 pop.w {r0-r6, lr}
+code += struct.pack('<H', 0xB5F0)               # 0x44 push {r4-r7, lr} (원래)
+code += enc_b_t2(MT_L + 0x46, MT_ADDR + 4)      # 0x46 b.w 0xbd2c
 while (MT_L + len(code)) % 4 != 0:
     code += b'\x00'
 lit1_off = len(code)
 code += struct.pack('<i', MSG_TAG - (MT_L + lit1_off))            # lit1 tag
 code += struct.pack('<i', MT_FMT - (MT_L + lit1_off))             # lit2 fmt
 code += struct.pack('<i', GOT_LOGPRINT - (MT_L + lit1_off))       # lit3 got
-code += struct.pack('<i', STATE_OBJ - (MT_L + lit1_off))          # lit4 상태객체 (r5 #12)
-code += struct.pack('<i', V7_MAINTIMER)                           # lit5 V7 (r7 #16)
-while len(code) < 0x58:
+code += struct.pack('<i', STATE_OBJ - (MT_L + lit1_off))          # lit4 상태객체
+code += struct.pack('<i', V7_MAINTIMER)                           # lit5 V7
+code += struct.pack('<i', STATE_SLOT - (MT_L + lit1_off))         # lit6 슬롯 주소
+while len(code) < 0x64:
     code += b'\x00'
 loggers[MT_ADDR] = (MT_L, code)
 print(f'mainTimer 로거 @0x{MT_L:05x}, 상태객체 0x{STATE_OBJ:05x}, V7=0x{V7_MAINTIMER:08x}')
@@ -170,7 +183,7 @@ code = bytearray()
 code += struct.pack('<HH', 0xE92D, 0x40BF)      # 0x00 push.w {r0-r5, r7, lr} — r7 보존!
 code += struct.pack('<H', 0x2004)               # 0x04 movs r0, #4
 pc_adr = (RC_L + 0x0A) & ~3
-imm8 = (RC_L + 0x40 - pc_adr) // 4   # 리터럴 @0x40
+imm8 = (RC_L + 0x44 - pc_adr) // 4   # 리터럴 @0x44
 assert 0 <= imm8 <= 255
 code += struct.pack('<H', 0xA400 | imm8)        # 0x06 adr r4, 리터럴
 code += struct.pack('<HH', 0xF8D4, 0x1000)      # 0x08 ldr.w r1, [r4] = tag
@@ -179,18 +192,19 @@ code += struct.pack('<HH', 0xF8D4, 0x2004)      # 0x0E ldr.w r2, [r4, #4] = fmt
 code += enc_add_reg(2, 2, 4)
 code += struct.pack('<HH', 0xF8D4, 0x3008)      # 0x14 ldr.w r3, [r4, #8] = got
 code += enc_add_reg(3, 3, 4)
-code += struct.pack('<HH', 0xF8D3, 0x3000)      # 0x1A ldr.w r3, [r3] = 함수
+code += struct.pack('<HH', 0xF8D3, 0xC000)      # 0x1A ldr.w r12, [r3] = 함수 (r3은 값 전달용)
 code += struct.pack('<HH', 0xF8D4, 0x500C)      # 0x1E ldr.w r5, [r4, #12] = 상태객체 주소
 code += enc_add_reg(5, 5, 4)
 code += struct.pack('<HH', 0xBF00, 0xBF00)      # 0x26 nop ×2 — 슬롯 경유 없이 직접 접근
 code += struct.pack('<H', 0x2D00)               # 0x2A cmp r5, #0
 code += struct.pack('<H', 0xD001)               # 0x2C beq +2
 code += struct.pack('<HH', 0xF8D5, 0x5004)      # 0x2E ldr.w r5, [r5, #4] = 상태값
-code += struct.pack('<H', 0x4798)               # 0x32 blx r3
-code += struct.pack('<HH', 0xF8D4, 0x7010)      # 0x34 ldr.w r7, [r4, #16] = V7
-code += struct.pack('<HH', 0xE8BD, 0x40BF)      # 0x38 pop.w {r0-r5, r7, lr} — r7 복원!
-code += struct.pack('<H', 0xB5F0)               # 0x3C push {r4-r7, lr} (원래)
-code += enc_b_t2(RC_L + 0x3C, RC_ADDR + 4)      # 0x3C b.w 0x4b65c
+code += struct.pack('<H', 0x462B)               # 0x32 mov r3, r5 — 값 전달
+code += struct.pack('<H', 0x47E0)               # 0x34 blx r12
+code += struct.pack('<HH', 0xF8D4, 0x7010)      # 0x36 ldr.w r7, [r4, #16] = V7
+code += struct.pack('<HH', 0xE8BD, 0x40BF)      # 0x3A pop.w {r0-r5, r7, lr} — r7 복원!
+code += struct.pack('<H', 0xB5F0)               # 0x3E push {r4-r7, lr} (원래)
+code += enc_b_t2(RC_L + 0x40, RC_ADDR + 4)      # 0x40 b.w 0x4b65c
 while (RC_L + len(code)) % 4 != 0:
     code += b'\x00'
 lit1_off = len(code)
@@ -211,7 +225,7 @@ for addr, (L, code) in loggers.items():
     print(f'로거 0x{L:05x}: 원본 {orig.hex()} → {"제로OK" if orig == z else "⚠️제로아님!"}')
     data[L:L+len(code)] = code
 data[MSG_TAG:MSG_TAG+len('HERMES_DBG')+1] = b'HERMES_DBG\x00'
-for addr, msg, _, _, _, _ in TARGETS:
+for addr, msg, _, _, _, _, _ in TARGETS:
     b = (msg + '\x00').encode('ascii')
     data[msg_addrs[addr]:msg_addrs[addr]+len(b)] = b
 b = b'st:%d\x00'
