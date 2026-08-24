@@ -70,7 +70,11 @@ IDIV_FMT_ADDR = str_off        # [0x1BBA8C] (__aeabi_idiv GOT) 값 로그용 "id
 str_off += len('idiv:%x') + 1
 while str_off % 4 != 0:
     str_off += 1
-print('문자열: tag=0x%05x, end=0x%05x, mt_fmt=0x%05x, rc_fmt=0x%05x, obj_fmt=0x%05x' % (MSG_TAG, str_off, MT_FMT_ADDR, RC_FMT_ADDR, OBJ_FMT_ADDR))
+CI15_FMT = str_off             # 케이스 14 진입: r0-r3 + [sp+0x34] + [sp+0x48] 실측!
+str_off += len('ci15:r0=%x r1=%x r2=%x r3=%x v34=%x v48=%x') + 1
+while str_off % 4 != 0:
+    str_off += 1
+print('문자열: tag=0x%05x, end=0x%05x, mt_fmt=0x%05x, rc_fmt=0x%05x, obj_fmt=0x%05x, ci15=0x%05x' % (MSG_TAG, str_off, MT_FMT_ADDR, RC_FMT_ADDR, OBJ_FMT_ADDR, CI15_FMT))
 
 # --- 2. 로거 코드 ---
 loggers = {}
@@ -370,6 +374,21 @@ data[0x5de5c:0x5de5e] = b'\x01\x23'  # movs r3, #1 (슬롯 상태 강제 → cre
 print(f'패치 0x5de5c: 이미지 로드 스킵 (movs r3,#1), 원본 {orig_5de5c.hex()}')
 
 # --- 4h-6. [ci16] MC_grpSetContext(0x6de80)/디스패처(0x68ef4) 진입 계측 ---
+def enc_bl2(addr, target):
+    pc = addr + 4
+    imm32 = target - pc
+    if imm32 < 0:
+        imm32 += (1 << 25)
+    S = (imm32 >> 24) & 1
+    I1 = (imm32 >> 23) & 1
+    I2 = (imm32 >> 22) & 1
+    imm10 = (imm32 >> 12) & 0x3FF
+    imm11 = (imm32 >> 1) & 0x7FF
+    J1 = (I1 ^ (1 - S)) & 1
+    J2 = (I2 ^ (1 - S)) & 1
+    h1 = 0xF000 | (S << 10) | imm10
+    h2 = 0xD000 | (J1 << 13) | (1 << 12) | (J2 << 11) | imm11
+    return struct.pack('<HH', h1, h2)
 # ci15 크래시: 0x6de80 진입 시 lr = 0xc0c7f150(스택+0x58) → JIT가 "리턴 슬롯(lr=sp+0x58)"
 # 방식으로 호출했는데 함수가 pop {pc}(bl 규약)로 리턴 → 스택 주소로 점프 → SEGV_ACCERR.
 # r10=0x83bc25e9(달빅), r4~r8=메소드 시그니처(0x71xxx) = JIT 네이티브 브리지 경유 증거.
@@ -385,7 +404,7 @@ code = bytearray()
 code += struct.pack('<HH', 0xE92D, 0x401F)      # 0x00 push.w {r0-r3, r4, lr}
 code += struct.pack('<H', 0x2004)               # 0x04 movs r0, #4
 pc_adr = (MCG_L + 0x0A) & ~3
-imm8 = (MCG_L + 0x30 - pc_adr) // 4
+imm8 = (MCG_L + 0x44 - pc_adr) // 4
 assert 0 <= imm8 <= 255
 code += struct.pack('<H', 0xA400 | imm8)        # 0x06 adr r4, lit
 code += struct.pack('<HH', 0xF8D4, 0x1000)      # 0x08 ldr.w r1, [r4] = tag
@@ -400,7 +419,19 @@ code += struct.pack('<H', 0x47E0)               # 0x22 blx r12
 code += struct.pack('<HH', 0xE8BD, 0x401F)      # 0x24 pop.w {r0-r3, r4, lr}
 code += struct.pack('<H', 0xB500)               # 0x28 push {lr} (원본 프롤로그)
 code += struct.pack('<H', 0xB081)               # 0x2A sub sp, #4 (원본 프롤로그)
-code += enc_b_t2(MCG_L + 0x2C, 0x6de84)         # 0x2C b.w 0x6de84 (bl 0x68ef4 — 0x6de80~0x6de83은 b.w로 덮임!)
+# ★ 2026-08-24 조건부 리턴으로 교체 (ART JIT "리턴 슬롯" 호출 대응):
+#   원본 pop {pc}는 lr=리턴슬롯(짝수,스택주소)이면 NX! → bl 0x68ef4 재현 후
+#   r3=저장된 lr 검사: 홀수(blx)→bx lr / 짝수(리턴슬롯)→ldr pc,[lr]
+bl_dis = enc_bl2(MCG_L + 0x2C, 0x68ef4)
+code += bl_dis                                  # 0x2C bl 0x68ef4 (원본 0x6de84 재현!)
+code += struct.pack('<H', 0xB001)               # 0x30 add sp, #4 (원본 0x6de88)
+code += struct.pack('<H', 0x9B00)               # 0x32 ldr r3, [sp] = 저장된 ART lr
+code += struct.pack('<H', 0xB001)               # 0x34 add sp, #4 (sp 정리)
+code += struct.pack('<H', 0x2201)               # 0x36 movs r2, #1
+code += struct.pack('<H', 0x421A)               # 0x38 tst r3, r2 (lr&1!)
+code += struct.pack('<H', 0xD101)               # 0x3A bne +2 → 0x40 (bx r3)
+code += enc_b_t2(MCG_L + 0x3C, 0x758f8)        # 0x3C b.w 0x758f8 (짝수 = 리턴슬롯 로그 스텁!)
+code += struct.pack('<H', 0x4718)               # 0x40 bx r3 (홀수 = blx 정상 복귀!)
 while (MCG_L + len(code)) % 4 != 0:
     code += b'\x00'
 lit1_off = len(code)
@@ -442,22 +473,40 @@ code2 += struct.pack('<i', DIS_FMT - (DIS_L + lit1_off2))      # lit1 fmt
 code2 += struct.pack('<i', GOT_LOGPRINT - (DIS_L + lit1_off2)) # lit2 got
 print(f'로거 0x68ef4 → 0x{DIS_L:05x}: r3/r0/r1 로그 (DIS_FMT=0x{DIS_FMT:05x})')
 # 테이블 우회 루틴 @0x74f80: r3 = 0xfff586ce + r2 → mov pc,r3가 정상 타깃(base+0x68f86)으로!
-TBL_BYPASS = 0x74f8c   # 0x74f88에 원본 데이터(c3e2c7f7) 존재 → 0x74f8c(제로 14B+) 사용
+TBL_BYPASS = 0x755ee   # 0x755ee~0x75618 제로 블록 (42B!) — 0x75400은 다른 로거가 사용!
 assert bytes(data[TBL_BYPASS:TBL_BYPASS+0x10]) == b'\x00' * 0x10, 'TBL_BYPASS 제로 아님!'
 tb = bytearray()
-tb += struct.pack('<HH', 0xF248, 0x63CE)        # 0x00 movw r3, #0x86ce
-tb += struct.pack('<HH', 0xF6CF, 0x73F5)        # 0x04 movt r3, #0xfff5 → r3 = 0xfff586ce
-tb += struct.pack('<H', 0x189B)                 # 0x08 adds r3, r3, r2 (r2 = base+0x1108b8)
-tb += enc_b_t2(TBL_BYPASS + 0x0A, 0x68f0c)      # 0x0A b.w 0x68f0c (mov pc, r3)
+tb += struct.pack('<H', 0x008B)               # 0x00 lsls r3, r1, #2 (케이스 인덱스*4!)
+tb += struct.pack('<HH', 0xF8D2, 0x3000)      # 0x02 ldr.w r3, [r2, r3] = 테이블[r1]
+tb += struct.pack('<H', 0x2B00)               # 0x06 cmp r3, #0 (무효 케이스: 0/1/11 = 0)
+tb += struct.pack('<H', 0xD002)               # 0x08 beq +4 → 0x10 (리턴 경로)
+tb += struct.pack('<H', 0x189B)               # 0x0A adds r3, r3, r2 (base + 핸들러!)
+tb += enc_b_t2(TBL_BYPASS + 0x0C, 0x68f0c)    # 0x0C b.w 0x68f0c (mov pc, r3)
+tb += enc_b_t2(TBL_BYPASS + 0x10, 0x68f1a)    # 0x10 b.w 0x68f1a (pop {r4,r5,r6,pc} 정상 리턴!)
 data[TBL_BYPASS:TBL_BYPASS+len(tb)] = tb
 orig_68f08 = bytes(data[0x68f08:0x68f0c])
-data[0x68f08:0x68f0c] = enc_b_t2(0x68f08, TBL_BYPASS)
-print(f'패치 0x68f08: {orig_68f08.hex()} → b.w 0x{TBL_BYPASS:05x} (테이블 우회 — 오염 무력화!)')
+# ★ 2026-08-24 TBL_BYPASS 연결 제거 — 0x68ef4가 스텁(no-op)이 되어 0x68f08은 도달 불가, 원본 유지!
+# data[0x68f08:0x68f0c] = enc_b_t2(0x68f08, TBL_BYPASS)
+print(f'패치 0x68f08: {orig_68f08.hex()} → 원본 유지 (0x68ef4 스텁으로 도달 불가!)')
 # 기록
 orig_6de80 = bytes(data[0x6de80:0x6de84])
 data[0x6de80:0x6de84] = enc_b_t2(0x6de80, MCG_L)
+# ★ 2026-08-24 MG_setContext(0x68ef4) → 조건부 리턴 스텁 (no-op):
+#   ART JIT가 setAlpha 호출 시 게임 상태 레지스터(r11=fp) 미설정(GOT 베이스 오염)
+#   → MG_setContext 케이스 4 드로잉이 r5=0xff(알파)를 포인터로 오용 → SEGV fault 0xff
+#   → 0x68ef4를 스텁으로: lr 홀수(bl)→bx lr / 짝수(리턴슬롯)→ldr pc,[lr] (그룹 설정 생략!)
+MG_STUB = 0x75608   # 0x75602~0x75618 제로 (TBL_BYPASS 뒤 여유!)
+assert bytes(data[MG_STUB:MG_STUB+0xC]) == b'\x00' * 0xC, 'MG_STUB 제로 아님!'
+mgstub = bytearray()
+mgstub += struct.pack('<H', 0x4673)               # mov r3, lr
+mgstub += struct.pack('<H', 0x2201)               # movs r2, #1
+mgstub += struct.pack('<H', 0x421A)               # tst r3, r2 (Thumb-1 TST는 레지스터 간!)
+mgstub += struct.pack('<H', 0xD101)               # bne +2 → 0x75614 (bx r3)! ★ 0xD102는 +4 → 0x75616 패딩!
+mgstub += struct.pack('<HH', 0xF8D3, 0xF000)      # ldr.w pc, [r3, #0] (리턴 슬롯!)
+mgstub += struct.pack('<H', 0x4718)               # bx r3 (정상 bl 복귀!)
+data[MG_STUB:MG_STUB+len(mgstub)] = mgstub
 orig_68ef4 = bytes(data[0x68ef4:0x68ef8])
-data[0x68ef4:0x68ef8] = enc_b_t2(0x68ef4, DIS_L)
+data[0x68ef4:0x68ef8] = enc_b_t2(0x68ef4, MG_STUB)
 data[MCG_L:MCG_L+len(code)] = code
 data[DIS_L:DIS_L+len(code2)] = code2
 b = b'mcg:%x %x %x %x\x00'
@@ -465,7 +514,48 @@ data[MCG_FMT:MCG_FMT+len(b)] = b
 b = b'dis:%x %x %x %x\x00'
 data[DIS_FMT:DIS_FMT+len(b)] = b
 print(f'패치 0x6de80: {orig_6de80.hex()} → b.w 0x{MCG_L:05x} (진입 계측)')
-print(f'패치 0x68ef4: {orig_68ef4.hex()} → b.w 0x{DIS_L:05x} (진입 계측)')
+print(f'패치 0x68ef4: {orig_68ef4.hex()} → b.w 0x{MG_STUB:05x} (MG_setContext 스텁: no-op+조건부리턴!)')
+
+# ★ 2026-08-24 리턴 슬롯 로그 스텁 (0x758f8): mcg 짝수 lr(ART JIT 리턴 슬롯) 분기!
+#   [lr]/[lr+4]/[lr+8] 실측 → ART JIT 복귀 구조 파악 (dalvik-main space NX 크래시 원인!)
+RTN_L = 0x758f8
+RTN_FMT = 0x749a0  # "rtn:%x %x %x %x" (0x74998~0x749fc 제로 — 0x74a80은 imgret 로거가 사용!)
+assert bytes(data[RTN_L:RTN_L+0x40]) == b'\x00' * 0x40, 'RTN_L 제로 아님!'
+assert bytes(data[RTN_FMT:RTN_FMT+0x10]) == b'\x00' * 0x10, 'RTN_FMT 제로 아님!'
+rtn = bytearray()
+rtn += struct.pack('<HH', 0xE92D, 0x401F)        # 0x00 push.w {r0-r3, r4, lr} (r3 보존!)
+rtn += struct.pack('<H', 0x2004)                 # 0x04 movs r0, #4
+rtn += struct.pack('<H', 0xA400)                 # 0x06 adr r4, lit (imm8 임시 — 아래 재작성!)
+rtn += struct.pack('<HH', 0xF8D4, 0x1000)        # 0x08 ldr.w r1, [r4] = tag
+rtn += enc_add_reg(1, 1, 4)
+rtn += struct.pack('<HH', 0xF8D4, 0x2004)        # 0x0E ldr.w r2, [r4,#4] = fmt
+rtn += enc_add_reg(2, 2, 4)
+rtn += struct.pack('<HH', 0xF8D4, 0x5008)        # 0x14 ldr.w r5, [r4,#8] = got
+rtn += enc_add_reg(5, 5, 4)
+rtn += struct.pack('<HH', 0xF8D5, 0xC000)        # 0x1A ldr.w r12, [r5] = __android_log_print
+rtn += struct.pack('<HH', 0xF8D3, 0x5000)        # 0x1E ldr.w r5, [r3] = [lr]!
+rtn += struct.pack('<HH', 0xF8D3, 0x6004)        # 0x22 ldr.w r6, [r3,#4] = [lr+4]!
+rtn += struct.pack('<HH', 0xF8D3, 0x7008)        # 0x26 ldr.w r7, [r3,#8] = [lr+8]!
+rtn += struct.pack('<HH', 0xF8D7, 0x7000)        # 0x2A ldr.w r7, [r7] = [[lr+8]]! (진짜 복귀 주소?)
+rtn += struct.pack('<HH', 0xE92D, 0x00E0)        # 0x2E push.w {r5, r6, r7} (varargs!)
+rtn += struct.pack('<H', 0x47E0)                 # 0x32 blx r12
+rtn += struct.pack('<H', 0xB00C)                 # 0x34 add sp, #12
+rtn += struct.pack('<HH', 0xE8BD, 0x401F)        # 0x36 pop.w {r0-r3, r4, lr} (r3 복원!)
+rtn += struct.pack('<HH', 0xF8D3, 0xF000)        # 0x3A ldr.w pc, [r3] (기존 동작 — [lr] 점프!)
+while (RTN_L + len(rtn)) % 4 != 0:
+    rtn += b'\x00'
+lit_off = len(rtn)
+pc_adr = (RTN_L + 0x0A) & ~3                     # adr(0x06)의 PC = RTN_L+0x0A → Align(PC,4)!
+imm8 = (RTN_L + lit_off - pc_adr) // 4           # 리터럴 @lit_off
+assert 0 <= imm8 <= 255
+rtn[0x06:0x08] = struct.pack('<H', 0xA400 | imm8)  # adr r4, lit 재작성!
+rtn += struct.pack('<i', MSG_TAG - (RTN_L + lit_off))       # tag
+rtn += struct.pack('<i', RTN_FMT - (RTN_L + lit_off))       # fmt
+rtn += struct.pack('<i', GOT_LOGPRINT - (RTN_L + lit_off))  # got
+data[RTN_L:RTN_L+len(rtn)] = rtn
+b = b'rtn:%x %x %x %x\x00'
+data[RTN_FMT:RTN_FMT+len(b)] = b
+print(f'리턴슬롯 로그 스텁 @0x{RTN_L:05x} (RTN_FMT=0x{RTN_FMT:05x})')
 
 # --- 4h-8. [ci35] setAlpha(0x5e130) 로거 + 조건부 리턴 (JIT "lr=리턴슬롯" 호출 대응!) ---
 # ci34 실측: ret 로그 [sp+4]=0xc15a714d(정상 bl 리턴!), setAlpha pop {pc}가 [sp]=lr=sp+0x58
@@ -532,12 +622,17 @@ def enc_bl(addr, target):
 bl6de80 = enc_bl(ALPHA_L + 0x34, 0x6de80)
 # code4의 bl 자리 교체 (0x34 위치 = 코드 0x34~0x37)
 code4[0x34:0x38] = bl6de80
-orig_5e130 = bytes(data[0x5e130:0x5e134])
-data[0x5e130:0x5e134] = enc_b_t2(0x5e130, ALPHA_L)
-data[ALPHA_L:ALPHA_L+len(code4)] = code4
-b = b'alpha:%x %x\x00'
-data[ALPHA_FMT:ALPHA_FMT+len(b)] = b
-print(f'패치 0x5e130: {orig_5e130.hex()} → b.w 0x{ALPHA_L:05x} (setAlpha 로거+조건부 리턴!)')
+# ★ 2026-08-24 ALPHA 로거 비활성화 (케이스14 수정 실험):
+#   4h-7(POPRET 로거 @0x75060)의 리터럴(0x750a0~0x750ac)이 4h-8(ALPHA 로거 @0x750a0)을 덮음
+#   → setAlpha→0x750a0 = 리터럴 → SIGILL. 4h-7이 나중에 실행되므로 ALPHA 로거는 항상 손상.
+#   ALPHA 로거 기록을 막으면 setAlpha 원본 유지 + 0x750a0은 POPRET 리터럴로 안전.
+# orig_5e130 = bytes(data[0x5e130:0x5e134])
+# data[0x5e130:0x5e134] = enc_b_t2(0x5e130, ALPHA_L)
+# data[ALPHA_L:ALPHA_L+len(code4)] = code4
+# b = b'alpha:%x %x\x00'
+# data[ALPHA_FMT:ALPHA_FMT+len(b)] = b
+# print(f'패치 0x5e130: {orig_5e130.hex()} → b.w 0x{ALPHA_L:05x} (setAlpha 로거+조건부 리턴!)')
+print('★ ALPHA 로거(4h-8) 비활성화 — setAlpha 원본 유지, 0x750a0은 POPRET 리터럴')
 
 # --- 4h-9. [ci36] 0x5e1f2(ldr r4,[r4,r3]) 로거 — [base+0x1BBB70] GOT 슬롯 실측 ---
 # ci36: ALPHA/ret r5 버그 수정 후 크래시가 libjpeg.so+0x2cfd0(데이터!)에서 발생.
@@ -634,10 +729,14 @@ code3 += struct.pack('<i', MSG_TAG - (POPRET_L + lit1_off3))       # tag
 code3 += struct.pack('<i', POP_FMT - (POPRET_L + lit1_off3))       # fmt
 code3 += struct.pack('<i', GOT_LOGPRINT - (POPRET_L + lit1_off3))  # got
 orig_6de88 = bytes(data[0x6de88:0x6de8c])
-data[0x6de88:0x6de8c] = enc_b_t2(0x6de88, POPRET_L)
-data[POPRET_L:POPRET_L+len(code3)] = code3
-b = b'ret:%x %x\x00'
-data[POP_FMT:POP_FMT+len(b)] = b
+# ★ 2026-08-24 POPRET 로거(4h-7) 비활성화: [sp]=r5저장값(.bss)을 복귀 주소로 오용 → NX 크래시.
+#   0x6de88 시점 [sp]=old r5, [sp+4]=lr — ldr r3,[sp]는 복귀주소가 아님.
+#   케이스14 실험에서는 계측 불필요 → 원본 유지(MC_grpSetContext 정상 복귀).
+# data[0x6de88:0x6de8c] = enc_b_t2(0x6de88, POPRET_L)
+# data[POPRET_L:POPRET_L+len(code3)] = code3
+# b = b'ret:%x %x\x00'
+# data[POP_FMT:POP_FMT+len(b)] = b
+print('★ POPRET 로거(4h-7) 비활성화 — 0x6de88 원본 유지')
 print(f'패치 0x6de88: {orig_6de88.hex()} → b.w 0x{POPRET_L:05x} ([sp]/[sp+4] 리턴값 실측!)')
 
 # --- 5. Cycle I: __aeabi_idiv ARM 루틴 직접 구현 (0x74eb8) + 0x2a80 스텁 교체 ---
@@ -771,57 +870,131 @@ b = b'ent:%x %x\x00'
 data[ENT_FMT:ENT_FMT+len(b)] = b
 print(f'패치 0x2da30: {orig_2da30.hex()} → b.w 0x{ENT_L:05x} (draw_MunjangStore 진입: lr/r0 실측!)')
 
-# --- 4h-10. [ci38] 0x2e0c8(리터럴 풀!) → 케이스 14 트램펄린 수정 (Cycle I) ---
+# --- 4h-10. [ci38] 0x2e0c8(리터럴 풀!) → 케이스 14 트램펄린 수정 (Cycle I, v14) ---
 # JIT2 로거 실측(17:57): jit2:c15250a5 0 0 fffff05c → SIGILL fault 0xc15250a4
 # 결론: ART JIT가 "케이스 14 핸들러"를 0x2e0d0-8 = 0x2e0c8(리터럴 풀=데이터!)로 오계산!
 #   사용자 이론 검산: 케이스1218(0x2f398)-0x12D0 = 0x2e0c8! (0x2e0d0-0x2e0c8=8 = 리터럴 풀 선행!)
-#   lr=0x730a5 = 이식 런타임이 .so 내부에 생성한 JIT 트램펄린 (blx 0x2e0c8!)
-# 수정: 0x2e0c8에 b.w 0x2e0d0! → 런타임이 0x2e0c8을 함수로 호출해도 케이스 14(0x2e0d0)로!
-#   케이스 14 = 0x2e0d0~0x2e160 (ldr [pc,#0x364]=0x280 → bl 0x5ddf4 → b 0x2dc02 메인루프!)
-# 안전성(전수 스캔): 0x2e0c8의 원래 값(0xfff45f48)을 읽는 곳 = 0x2e07a 1곳뿐!
-#   0x2e07a~0x2e08e는 죽은 코드(점프 타깃 0건!) → 리터럴 풀 교체 무해!
+# 수정(v14): 0x2e0c8에 b.w 0x2e0d0! + 0x2e0d0에 b.w LOGGER_C!
+# ★ 안전성 재검증(전수 스캔): 0x2e0c8의 원래 값(0xfff45f48)을 읽는 곳 = 0x2e07a 1곳!
+#   ★ 0x2e07a~0x2e08e는 "죽은 코드"가 아니라 활성 코드! (0x2e000으로 점프 23건!)
+#   → 0x2e0c8을 b.w로 덮으면 0x2e07a(케이스13 메뉴초기화)가 b.w 인코딩을 읽고 크래시!
+#   → 0xfff45f48을 0x2e0d4~0x2e0d7로 이전 + 0x2e07a의 imm8 조정(0x13→0x16)!
 orig_2e0c8 = bytes(data[0x2e0c8:0x2e0cc])
 assert orig_2e0c8 == struct.pack('<I', 0xfff45f48), f'0x2e0c8 원본 아님: {orig_2e0c8.hex()}'
 data[0x2e0c8:0x2e0cc] = enc_b_t2(0x2e0c8, 0x2e0d0)  # b.w 0x2e0d0 (케이스 14 트램펄린!)
-print(f'패치 0x2e0c8: {orig_2e0c8.hex()} → b.w 0x2e0d0 (케이스 14 트램펄린 수정!)')
+print(f'패치 0x2e0c8: {orig_2e0c8.hex()} → b.w 0x2e0d0 (케이스 14 트램펄린!)')
 
-# --- 4h-11. [ci39] 케이스 14 본체(0x2e0d0) 로거 — sl(r10) 실측 (v13: 본체 내부 구조!) ---
-# 실측: r9=0x1c4 (GOT 아님!), r2=0xfffff05d 등 → 0x76104 영역은 런타임 코드 영역과 충돌!
-# 수정: 로거를 케이스 14 본체(0x2e0d0) 내부에! 0x2e0d0은 코드 영역(런타임 생성 영역 밖!)
-# 구조: 0x2e0d0: push(4) + movs r0(2) + nop(2) + b.w 0x2e0E4(4) + 리터럴(8B @0x2e0DC)
-#       + mov r4,pc(2) + subs r4,#12(2) + ldr/add r2(6) + mov r1,r2(2) + ldr.w r3(4)
-#       + add r3(2) + ldr.w r12(4) + mov r3,r10(2) + blx r12(2) + pop(4)
-#       + movw r3,#0x280(4) + b.w 0x2e0d6(4) = 총 0x38B!
-J2L = 0x2e0d0   # 케이스 14 본체 시작!
-body_orig = bytes(data[0x2e0d0:0x2e13c])
-assert len(body_orig) == 0x6C, f'본체 길이 {len(body_orig)}'
-J2_FMT_C = 0x70f70   # .rodata 시작부 패딩 (4B!)
-LIT_C = 0x2e0dc      # 리터럴 시작 (b.w 뒤! 4B 정렬!)
-codeC = bytearray()
-codeC += struct.pack('<HH', 0xE92D, 0x401F)      # push.w {r0-r4, lr} (24B!)
-codeC += struct.pack('<H', 0x2004)               # movs r0, #4 (priority!)
-codeC += struct.pack('<H', 0x0000)               # nop (패딩!)
-codeC += enc_b_t2(J2L + 0x08, 0x2e0e4)           # b.w 0x2e0E4 (리터럴 건너뜀!)
-codeC += struct.pack('<i', J2_FMT_C - LIT_C)     # fmt 델타 (리터럴 @0x2e0DC!)
-codeC += struct.pack('<i', GOT_LOGPRINT - LIT_C) # got 델타 (리터럴 @0x2e0E0!)
-codeC += struct.pack('<H', 0x467C)               # mov r4, pc (r4 = 0x2e0E4+4 = 0x2e0E8)
-codeC += struct.pack('<HH', 0xF1A4, 0x040C)      # subw r4, r4, #12 (r4 = 0x2e0DC!)
-codeC += struct.pack('<HH', 0xF8D4, 0x2000)      # ldr.w r2, [r4] = fmt 델타
-codeC += enc_add_reg(2, 2, 4)                     # add r2, r4 → fmt 주소
-codeC += struct.pack('<H', 0x4611)               # mov r1, r2 (tag)
-codeC += struct.pack('<HH', 0xF8D4, 0x3004)      # ldr.w r3, [r4,#4] = got 델타
-codeC += enc_add_reg(3, 3, 4)                     # add r3, r4 → got 주소
-codeC += struct.pack('<HH', 0xF8D3, 0xC000)      # ldr.w r12, [r3] = log_print
-codeC += struct.pack('<H', 0x4653)               # mov r3, r10 (sl!)
-codeC += struct.pack('<H', 0x47E0)               # blx r12
-codeC += struct.pack('<HH', 0xE8BD, 0x401F)      # pop.w {r0-r4, lr}
-codeC += struct.pack('<HH', 0xF240, 0x2380)      # movw r3, #0x280 (원본 ldr r3 대체!)
-codeC += enc_b_t2(J2L + len(codeC), 0x2e0d6)     # b.w 0x2e0d6 (본체 계속!)
-assert len(codeC) <= 0x6C, f'코드 길이 {len(codeC)} > 0x6C!'
-data[0x2e0d0:0x2e0d0+len(codeC)] = codeC
-bC = b'%x\x00'                                    # sl(r10)만!
-data[J2_FMT_C:J2_FMT_C+len(bC)] = bC
-print(f'패치 케이스14 본체 0x2e0d0: 로거 {len(codeC)}B 설치! (sl(r10) 실측 v13!)')
+# 리터럴 0xfff45f48 이전: 0x2e0c8 → 0x2e0d4 (0x2e07a가 읽는 위치!)
+#   0x2e07a: ldr r1, [pc, #0x58] → PC=0x2e07c + 0x58 = 0x2e0D4! (imm8 0x13→0x16)
+#   원본 0x2e0d4~0x2e0d7은 케이스14 본체(ldr r0,[r1,r3] + bl 첫 halfword) → LOGGER_C가 재현!
+orig_2e07a = bytes(data[0x2e07a:0x2e07c])
+assert orig_2e07a == b'\x13\x49', f'0x2e07a 원본 아님: {orig_2e07a.hex()}'
+data[0x2e07a:0x2e07c] = b'\x16\x49'  # imm8 0x13 → 0x16 (0x2e0c8 → 0x2e0d4!)
+print(f'패치 0x2e07a: {orig_2e07a.hex()} → 1649 (리터럴 0x2e0d4 참조!)')
+
+# --- 4h-11. [ci39] 케이스 14 진입 래퍼 — v21 (인자 실측 로그, 106B!) ---
+# v20 실측(07:09): 0x2e0e0 SEGV fault 0x4! [sp+0x48]=r1+4=4 → r1=0!
+#   ART JIT가 넘기는 r1이 '호출마다 다름' (05:25: c0c7f058! 07:09: 0!)
+#   → 레지스터 기반 프레임 불가! 정확한 인자 실측 필요!
+# v21: sub sp,#0x174만 (push 생략!) + 로그(r0-r3 + [원래sp+0x48]) + r1 기반 프레임!
+def enc_movw_movt(reg, val):
+    """movw/movt 인코더! val 32비트!
+    MOVW T3: hw1 = 1111 0 i 100100 imm4 | hw2 = 0 imm3 Rd imm8!
+    imm16 = imm4:i:imm12 (imm12 = imm3:imm8 = 11비트!)
+    hw2 = (imm3 << 12) | (Rd << 8) | imm8!"""
+    out = b''
+    for opcode, v in [(0xF240, val & 0xFFFF), (0xF2C0, (val >> 16) & 0xFFFF)]:
+        i = (v >> 11) & 1
+        imm4 = (v >> 12) & 0xF
+        imm12 = v & 0x7FF
+        imm3 = (imm12 >> 8) & 0x7
+        imm8 = imm12 & 0xFF
+        hw1 = opcode | (i << 10) | imm4
+        hw2 = (imm3 << 12) | (reg << 8) | imm8
+        out += struct.pack('<HH', hw1, hw2)
+    return out
+
+CASE14_WRAPPER = 0x75de0   # 0x75de0~0x75e4c 제로 블록 (108B, 확인 완료!)
+CI15B_FMT = CI15_FMT + 0x30  # CI15_FMT 뒤! 'ci15b:r0=%x r1=%x r2=%x r3=%x v48=%x'
+codeW = bytearray()
+# 0x75de0: 프롤로그! (push 생략! 프레임만!)
+codeW += struct.pack('<H', 0xB0DD)               # sub sp, #0x174 (2B! 372B!)
+# 0x75de2: 로그! (push.w {r0-r3, lr} 20B!)
+codeW += struct.pack('<HH', 0xE92D, 0x400F)      # push.w {r0-r3, lr} (4B!)
+# 0x75de6: r8 = base + CI15B_FMT! (add r8,pc @0x75dee! pc=base+0x75df2!)
+codeW += enc_movw_movt(8, (CI15B_FMT - 0x75df2)) # movw/movt r8 (8B)
+codeW += struct.pack('<H', 0x44F8)               # add r8, pc (2B!)
+# 0x75df0: r12 = base + 0x1bb998! (add r12,pc @0x75df8! pc=base+0x75dfc!)
+codeW += enc_movw_movt(12, (0x1bb998 - 0x75dfc)) # movw/movt r12 (8B)
+codeW += struct.pack('<H', 0x44FC)               # add r12, pc (2B!)
+codeW += struct.pack('<HH', 0xF8DC, 0xC000)      # ldr.w r12, [r12] = log_print (4B!)
+codeW += struct.pack('<H', 0x2004)               # movs r0, #4 (2B!)
+codeW += struct.pack('<H', 0x4641)               # mov r1, r8 (tag!) (2B!)
+codeW += struct.pack('<H', 0x4642)               # mov r2, r8 (fmt!) (2B!)
+codeW += struct.pack('<H', 0x9B00)               # ldr r3, [sp, #0] = 원래 r0! (2B!)
+codeW += struct.pack('<H', 0x9E02)               # ldr r6, [sp, #8] = 원래 r2! (2B!)
+codeW += struct.pack('<H', 0x9F03)               # ldr r7, [sp, #12] = 원래 r3! (2B!)
+codeW += struct.pack('<HH', 0xF8DD, 0x91B8)      # ldr.w r9, [sp, #0x1B8] = [원래sp+0x48]! (4B!)
+codeW += struct.pack('<HH', 0xF8DD, 0xA010)      # ldr.w r10, [sp, #0x10] = lr! (4B! blx/jump 경로 확인!)
+codeW += struct.pack('<HH', 0xE92D, 0x06C0)      # push.w {r6, r7, r9, r10} (4B! varargs!)
+codeW += struct.pack('<H', 0x47E0)               # blx r12 (2B!)
+codeW += struct.pack('<H', 0xB008)               # add sp, #16 (2B!)
+codeW += struct.pack('<HH', 0xE8BD, 0x400F)      # pop.w {r0-r3, lr} (4B!)
+# 0x75e18: 프레임 구성! (r2 = GOT 베이스! r1 = arg1!)
+codeW += enc_movw_movt(2, (0x1bb908 - 0x75e22)) # movw/movt r2 (8B!) (add r2,pc @0x75e22!)
+codeW += struct.pack('<H', 0x447A)               # add r2, pc (2B! r2 = base+0x1bb908!)
+codeW += struct.pack('<H', 0x920D)               # str r2, [sp, #0x34] = GOT! (2B!)
+codeW += struct.pack('<H', 0x910E)               # str r1, [sp, #0x38] = arg1! (2B!)
+codeW += struct.pack('<H', 0x910F)               # str r1, [sp, #0x3c] = this! (2B!)
+codeW += struct.pack('<H', 0x460B)               # mov r3, r1 (2B!)
+codeW += struct.pack('<H', 0x3304)               # adds r3, #4 (2B!)
+codeW += struct.pack('<H', 0x9312)               # str r3, [sp, #0x48] = arg1+4! (2B!)
+codeW += struct.pack('<H', 0x3304)               # adds r3, #4 (2B!)
+codeW += struct.pack('<H', 0x9313)               # str r3, [sp, #0x4c] = arg1+8! (2B!)
+codeW += struct.pack('<H', 0x3304)               # adds r3, #4 (2B!)
+codeW += struct.pack('<H', 0x9314)               # str r3, [sp, #0x50] = arg1+0xc! (2B!)
+# --- 원본 0x2e0d0~0x2e0d6 재현 ---
+codeW += struct.pack('<HH', 0xF240, 0x2380)      # movw r3, #0x280 (4B!)
+codeW += struct.pack('<H', 0x990D)               # ldr r1, [sp, #0x34] (2B!)
+codeW += struct.pack('<H', 0x58C8)               # ldr r0, [r1, r3] (2B!)
+codeW += enc_bl(CASE14_WRAPPER + len(codeW), 0x5ddf4)  # bl 0x5ddf4 (4B!)
+codeW += enc_b_t2(CASE14_WRAPPER + len(codeW), 0x2e0da) # b.w 0x2e0da (4B!)
+assert len(codeW) <= 0x6C, f'래퍼 길이 {len(codeW)} > 0x6C!'
+data[CASE14_WRAPPER:CASE14_WRAPPER+len(codeW)] = codeW
+# CI15B_FMT 문자열!
+bC15B = b'ci15b:r0=%x r2=%x r3=%x v48=%x lr=%x\x00'
+data[CI15B_FMT:CI15B_FMT+len(bC15B)] = bC15B
+print(f'v21 래퍼 길이: {len(codeW)}B (CI15B_FMT=0x{CI15B_FMT:05x})')
+# 0x2e0d0: bx lr + nop (ART JIT 직접 blx 호출 무력화: 조용히 복귀!) 
+# + 0x2e0d4~0x2e0d7: 리터럴 0xfff45f48 (0x2e07a용!)
+# v22 실측: ART JIT가 blx로 0x2e0d0 호출(lr=c14170a5=JIT코드) → 래퍼 프레임 구성 불가 → 본체 [sp+0x48] 역참조 SEGV
+# → bx lr로 즉시 복귀: 케이스 14 드로잉 스킵, ART JIT 코드로 안전 복귀
+orig_2e0d0 = bytes(data[0x2e0d0:0x2e0d4])
+data[0x2e0d0:0x2e0d4] = struct.pack('<HH', 0x4770, 0xBF00)  # bx lr / nop
+data[0x2e0d4:0x2e0d8] = struct.pack('<I', 0xfff45f48)  # 리터럴 이전!
+bC15 = b'ci15:r0=%x r1=%x r2=%x r3=%x v34=%x v48=%x\x00'
+data[CI15_FMT:CI15_FMT+len(bC15)] = bC15
+print(f'패치 0x2e0d0: {orig_2e0d0.hex()} → b.w 0x{CASE14_WRAPPER:05x} + 리터럴 0x2e0d4 (케이스14 래퍼 v17! fmt=0x{CI15_FMT:05x})')
+
+# --- 4h-12. [ci40] 이벤트 루프 게이트 0x63fc: beq → b (드로잉 강제 진입 복원!) ---
+# v0.4b(6f7098b) 패치가 누락되어 게임 로직 멈춤(검은 화면 고정)!
+# 0x63fc: cmp r0,#0 / 0x63fe: beq 0x641e → b 0x641e (무조건 드로잉 경로!)
+orig_63fc = bytes(data[0x63fc:0x63fe])
+assert orig_63fc == b'\x0f\xd0', f'0x63fc 원본 아님: {orig_63fc.hex()}'
+data[0x63fc:0x63fe] = b'\x0f\xe0'   # beq(0xd00f) → b(0xe00f) (+0x1E = 0x641e!)
+print(f'패치 0x63fc: {orig_63fc.hex()} → e00f (이벤트 루프 게이트: beq→b 드로잉 강제!)')
+
+# --- 4h-13. [ci41] 케이스 14 디스패치 테이블: 0x2e0d0 → 안전 반환 stub ---
+# 0x1c4998 = 12B 레코드 테이블(타입, 인덱스, 주소)의 케이스 14 엔트리 (주소 0x2e0d0)
+# ART JIT가 프레임 없이 이 주소로 점프 → draw_MunjangStore 프레임 부재 → [sp+0x48] 역참조 SEGV(fault 0x4)
+# → stub(bx lr) 교체: 케이스 14 드로잉 스킵 + 크래시 방지 (실험)
+STUB_RET = 0x7575c
+assert bytes(data[STUB_RET:STUB_RET+16]) == b'\x00'*16, '0x7575c 제로 블록 아님'
+data[STUB_RET:STUB_RET+2] = struct.pack('<H', 0x4770)  # bx lr
+orig_tbl = struct.unpack_from('<I', data, 0x1c4998)[0]
+assert orig_tbl == 0x2e0d0, f'테이블 0x1c4998 값 아님: 0x{orig_tbl:05x}'
+data[0x1c4998:0x1c499c] = struct.pack('<I', STUB_RET)
+print(f'패치 0x1c4998: 0x{orig_tbl:05x} → 0x{STUB_RET:05x} (케이스14 stub: bx lr)')
 
 open(SRC, 'wb').write(data)
 print(f'저장: {SRC} ({len(data)}B)')
