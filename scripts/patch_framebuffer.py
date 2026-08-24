@@ -19,6 +19,10 @@ initCanvas가 항상 0을 저장 → XGraphics 픽셀 함수가 null 프레임�
   7. 0x711F8: "mNativeCanvas\0" → "sFrameBuffer\0"
   8. 0x720DC~0x720F0: "com/beyond/AppThread\0" (21B)
   9. 0x720F1: 'J'
+  10. [0x5758]: 0x1280 → 0x1284 — 0x5748 함수 저장 대상 변경
+      [0x1BB908+0x1280]=[0x1BCB88] (LCD 객체) → [0x1BB908+0x1284]=[0x1BCB8C] (SkBitmap1)
+      [0x1BCB88]=NULL 유지 → BH_fbFlushLcdWithFrameBuffer 조기종료 (vtable 콜백 크래시 차단)
+      [0x1BCB8C]=DirectByteBuffer → 게임이 A+0x200에 직접 렌더링 (방안 C-2)
 
 JNIEnv 슬롯 (ART 실측 교차검증):
   GetFieldID=94(0x178), GetIntField=100(0x190) — KTF 원본+abort 메시지로 확정
@@ -51,6 +55,14 @@ def main():
     assert struct.unpack_from('<I', data, 0x3f88)[0] == 0xffeb58f0, '0x3f88 리터럴 불일치'
     assert data[0x711f8:0x711f8+13] == b'mNativeCanvas', '0x711F8 문자열 불일치'
     assert data[0x720dc:0x720f1] == b'\x00' * 0x15, '0x720DC 제로 블록 아님'
+    assert struct.unpack_from('<I', data, 0x5758)[0] == 0x1280, '0x5758 리터럴 불일치 (기대 0x1280)'
+    # 0x58c20 (XGraphics 버퍼 getter) — 원본 어셈 assert
+    assert struct.unpack_from('<H', data, 0x58c26)[0] == 0x2901, '0x58c26 기대 cmp r1,#1 (0x2901)'
+    assert struct.unpack_from('<H', data, 0x58c28)[0] == 0xd003, '0x58c28 기대 beq (0xd003)'
+    assert struct.unpack_from('<H', data, 0x58c2a)[0] == 0x4b05, '0x58c2a 기대 ldr r3,[pc] (0x4b05)'
+    assert struct.unpack_from('<H', data, 0x58c2c)[0] == 0x58d3, '0x58c2c 기대 ldr r3,[r2,r3] (0x58d3)'
+    assert struct.unpack_from('<H', data, 0x58c2e)[0] == 0x6d58, '0x58c2e 기대 ldr r0,[r3,#0x54] (0x6d58)'
+    assert struct.unpack_from('<I', data, 0x58c40)[0] == 0x268, '0x58c40 리터럴 불일치 (기대 0x268)'
 
     # --- 패치 적용 ---
     # 1) GetFieldID(94) → GetStaticFieldID(144=0x240): movs #0x90 + lsls #2
@@ -72,6 +84,8 @@ def main():
     data[0x720dc:0x720f1] = b'com/beyond/AppThread\x00'
     # 8) 시그니처 'J'
     data[0x720f1] = ord('J')
+    # 9) 0x5748 저장 대상: [0x1BCB88] → [0x1BCB8C] (리터럴 0x1280 → 0x1284)
+    struct.pack_into('<I', data, 0x5758, 0x1284)
 
     # --- 사후 assert ---
     assert data[0x3f42] == 0x90
@@ -85,6 +99,10 @@ def main():
     assert bytes(data[0x711f8:0x711f8+14]) == b'sFrameBuffer\x00\x00'
     assert bytes(data[0x720dc:0x720f1]) == b'com/beyond/AppThread\x00'
     assert data[0x720f1] == ord('J')
+    assert struct.unpack_from('<I', data, 0x5758)[0] == 0x1284, '0x5758 패치 실패'
+    # 0x58c20 패치 사후 assert
+    assert struct.unpack_from('<I', data, 0x5758)[0] == 0x1284, '0x5758 패치 실패'
+    assert struct.unpack_from('<I', data, 0x5758)[0] == 0x1284, '0x5758 패치 실패 (기대 0x1284)'
 
     open(dst, 'wb').write(data)
     m2 = hashlib.md5(data).hexdigest()

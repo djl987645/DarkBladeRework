@@ -951,9 +951,13 @@
 
     mul-int/2addr v2, v3
 
-    const/4 v3, 0x2
+    const/4 v3, 0x4
 
     mul-int/2addr v2, v3
+
+    const/16 v3, 0x200
+
+    add-int/2addr v2, v3
 
     invoke-static {v2}, Ljava/nio/ByteBuffer;->allocateDirect(I)Ljava/nio/ByteBuffer;
 
@@ -983,11 +987,54 @@
 
     sput-wide v4, Lcom/beyond/AppThread;->sFrameBuffer:J
 
+    # A 필드 기록 (SkBitmap1 구조, LITTLE_ENDIAN): fPixels/rowBytes/width/height
+    sget-object v2, Lcom/beyond/AppThread;->sFrameBuf:Ljava/nio/ByteBuffer;
+
+    sget-object v3, Ljava/nio/ByteOrder;->LITTLE_ENDIAN:Ljava/nio/ByteOrder;
+
+    invoke-virtual {v2, v3}, Ljava/nio/ByteBuffer;->order(Ljava/nio/ByteOrder;)Ljava/nio/ByteBuffer;
+
+    sget-wide v4, Lcom/beyond/AppThread;->sFrameBuffer:J
+
+    const-wide/16 v6, 0x200
+
+    add-long/2addr v4, v6
+
+    long-to-int v4, v4
+
+    const/4 v6, 0x4
+
+    invoke-virtual {v2, v6, v4}, Ljava/nio/ByteBuffer;->putInt(II)Ljava/nio/ByteBuffer;
+
+    const/16 v4, 0x640
+
+    const/16 v6, 0x8
+
+    invoke-virtual {v2, v6, v4}, Ljava/nio/ByteBuffer;->putInt(II)Ljava/nio/ByteBuffer;
+
+    const/16 v4, 0x190
+
+    const/16 v6, 0xc
+
+    invoke-virtual {v2, v6, v4}, Ljava/nio/ByteBuffer;->putInt(II)Ljava/nio/ByteBuffer;
+
+    const/16 v4, 0xf0
+
+    const/16 v6, 0x10
+
+    invoke-virtual {v2, v6, v4}, Ljava/nio/ByteBuffer;->putInt(II)Ljava/nio/ByteBuffer;
+
+    const/4 v4, 0x5
+
+    const/16 v6, 0x14
+
+    invoke-virtual {v2, v6, v4}, Ljava/nio/ByteBuffer;->putInt(II)Ljava/nio/ByteBuffer;
+
     sget v2, Lcom/beyond/AppThread;->sAppW:I
 
     sget v3, Lcom/beyond/AppThread;->sAppH:I
 
-    sget-object v6, Landroid/graphics/Bitmap$Config;->RGB_565:Landroid/graphics/Bitmap$Config;
+    sget-object v6, Landroid/graphics/Bitmap$Config;->ARGB_8888:Landroid/graphics/Bitmap$Config;
 
     invoke-static {v2, v3, v6}, Landroid/graphics/Bitmap;->createBitmap(IILandroid/graphics/Bitmap$Config;)Landroid/graphics/Bitmap;
 
@@ -1077,6 +1124,11 @@
     invoke-static {v1}, Lcom/beyond/CletActivity;->access$3(Lcom/beyond/CletActivity;)Landroid/graphics/Canvas;
 
     move-result-object v1
+
+    # initCanvas: [0x1BCB8C] = A (AppThread.sFrameBuffer:J — native GetStaticLongField)
+    invoke-static {}, Lcom/beyond/CletActivity;->access$4()Lcom/beyond/AppThread;
+
+    move-result-object v0
 
     invoke-virtual {v0, v1}, Lcom/beyond/AppThread;->initCanvas(Landroid/graphics/Canvas;)V
 

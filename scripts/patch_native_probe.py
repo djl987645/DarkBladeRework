@@ -490,7 +490,11 @@ orig_68f08 = bytes(data[0x68f08:0x68f0c])
 print(f'패치 0x68f08: {orig_68f08.hex()} → 원본 유지 (0x68ef4 스텁으로 도달 불가!)')
 # 기록
 orig_6de80 = bytes(data[0x6de80:0x6de84])
-data[0x6de80:0x6de84] = enc_b_t2(0x6de80, MCG_L)
+# ★ 2026-08-24 Cycle K: 0x6de80 → MG_STUB 직접 연결 (로그 없는 빌드!)
+#   mcg 로거(0x74eb8)의 __android_log_print 호출이 sp를 어긋나게 해
+#   리턴 슬롯(짝수 lr) 오인 크래시 유발 가설 검증. 로그 제거 시 크래시
+#   해소 + 게임 진행 → 가설 확정. 진짜 리턴 슬롯이면 ldr.w pc,[r3]에서 크래시.
+data[0x6de80:0x6de84] = enc_b_t2(0x6de80, 0x75608)  # MG_STUB (정의는 아래 — 하드코딩)
 # ★ 2026-08-24 MG_setContext(0x68ef4) → 조건부 리턴 스텁 (no-op):
 #   ART JIT가 setAlpha 호출 시 게임 상태 레지스터(r11=fp) 미설정(GOT 베이스 오염)
 #   → MG_setContext 케이스 4 드로잉이 r5=0xff(알파)를 포인터로 오용 → SEGV fault 0xff
