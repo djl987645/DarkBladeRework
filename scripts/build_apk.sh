@@ -9,10 +9,12 @@ KSPASS=darkblade
 BT=/opt/android-tools/build-tools/android-14
 
 echo "[1/4] 원본 복원 + 패치 스크립트 실행 (libLauncher.so)"
-# ★ 이중 패치 방지: src/libLauncher.so는 git에 패치본으로 커밋되어 있으므로
-#   반드시 원본(docs/libLauncher_original.so)에서 복원 후 1회만 패치한다.
-cp docs/libLauncher_original.so src/lib/armeabi-v7a/libLauncher.so
+# ★ 커밋본(HEAD) src/libLauncher.so를 기준으로 한다 — docs(KTF 순정)는
+#   initCanvas getter/C-2(0x1284)/이벤트 루프 등 검증된 패치가 없어 복원 시
+#   setAlpha SIGSEGV가 재발한다. (Cycle C-3 실측)
+git checkout HEAD -- src/lib/armeabi-v7a/libLauncher.so
 python3 scripts/patch_native_probe.py >/dev/null 2>&1 || { echo "패치 실패"; exit 1; }
+python3 scripts/patch_c3_v2.py >/dev/null 2>&1 || { echo "C-3 패치 실패"; exit 1; }
 
 echo "[2/4] apktool 빌드"
 rm -rf dist && mkdir -p dist

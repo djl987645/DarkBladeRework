@@ -91,3 +91,19 @@
 **교훈**:
 - 백트레이스 주소 변화(0x6454→0x63f6→0x63fa)로 이벤트 루프 경로 추적 가능. 스핀 위치가 함수 경계와 정확히 일치해야 신뢰
 - "startClet 실행됐다고 추정"하지 말 것 — 이벤트 루프가 스킵할 수 있음. 백트레이스+패치로 보장 후 다음 단계
+
+## Cycle C-3 — 2026-08-24 (네이티브 계측 삽입 + probe 크래시 규명)
+
+**목표**: fillRect/XGraphics 경로에서 [0x1BBB88]/[0x1BCB8C] 런타임 값 로그('H' 태그) — getter 패치 회귀 방지 + 검은 화면 원인
+
+**수행/실증**:
+- patch_c3_v2.py v3: 0x400e6→b.w 0x72884 계측 삽입(30B, blx PLT 0x27a4), **0x720dc 25B 슬라이스 수정**(23B가 2B 삽입=ELF 손상의 직접 원인, 1986715B 유지 확인)
+- **격리 실험**: C-3 단독=정상 구동(프로세스 생존, 'H' 0건=0x400e6 미발화) / **probe 단독=SIGSEGV 유일 범인**
+- MG_STUB Thumb 강제(orrs/bx) 수정 → 무효(동일 크래시). b.w 인코딩·설치본 바이트·TEXTREL 부재 모두 정상(패치 반영 확인)
+- **레지스터 덤프 4회 공통**: pc=익명 매핑 base+0x103150(항상, =매핑 끝 SEGV_ACCERR), sp=base+0x1030F8, r0=**0xFFFFFFFF(this=-1)**, r10=0x83BC25E9(JIT 코드), #02=[anon:libc_malloc](ART JIT 캐시). lr=libLauncher+0x5E14D(setAlpha bl 리턴) 또는 +0x6DE89(grpSetContext bl 리턴)
+- **핵심 통찰**: setAlpha 진입 시 lr=sp+0x50=0x...F150=JIT 버퍼 매핑 끝 → pop{pc} 리턴 시 NX 크래시. JIT 코드가 "lr=리턴 슬롯" 패턴으로 드로잉 함수 호출
+- 원복 실험: 0x6de80/0x68ef4 원복→크래시 유지(#01=MC_grpSetContext+4, r0=-1, .rodata 오염 점프테이블 노출) / draw_Menu 상태머신 5개(0x2dfd2/0x2da30/0x2e07a/0x2e0c8/0x2e0d0) 원복→크래시 유지(#01=setAlpha+24, r0=-1) / 0x5de5c+0x70fe0+0x1c4998 원복→프로세스 사망(signal 11 로그 없음, errorType 24)
+
+**가설**: probe의 게임 진행 강제(0x63fc 이벤트 루프 게이트·0x4b67c resChain·0x4b79a PLAY::draw 우회)가 리소스 미로드 상태로 드로잉 유도 → 객체=-1 → JIT가 -1 기반 호출 → 리턴 슬롯=매핑 끝 크래시
+
+**미해결/다음**: probe 크래시 유발 패치 특정(후보 0x4b67c·0x4b79a·0x63fc 이진 탐색) + JIT 버퍼 매핑 크기(0x103150) 실측
