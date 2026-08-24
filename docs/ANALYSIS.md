@@ -328,3 +328,71 @@ DBG:resload(0x40020)            ← 미진입 (대형 리소스 로드 경로 �
 
 
 
+
+## 12. 전체 구조 분석 보고서 (2026-08-24, KTF.apk 원본 확정)
+
+### 12.1 원본 확정 (KTF.apk)
+- 박종민 제공 KTF.apk(2008-02-29, 5,609,646B)에서 추출한 lib/armeabi/libLauncher.so = **진짜 원본**
+- md5: `8b13af7ef123fe059bca7217f5ee6b8f` (1,986,715B)
+- 기존 분석본(docs/libLauncher_original.so)과 **26B 차이 3구간만** 확인:
+  - 0x3f56(1B), 0x3f84~0x3f89(6B 리터럴 풀), 0x720dc~0x720f1(22B) = 기존본에만 있던 "mNativeCanvasWrapper" 문자열 제거분
+  - → 기존 분석본은 KTF와 다른 폰 버전/패치본. **이번 보고서는 KTF 원본 기준**
+- 분석 파이프라인 전량 KTF 원본으로 재실행 완료 (BL 10,748건, 함수 후보 4,185, 심볼 1,893 동일 수치)
+
+### 12.2 심볼 테이블 생존 — 전체 구조 복원
+- .symtab/.strtab 생존: 정의 FUNC **1,893개**, 전역 OBJECT 262개
+- c++filt demangle → 클래스 구조 완전 복원
+- **클래스별 함수 수 TOP 25**:
+  - MENU 110, PLAY 91, UI 88, XGraphics 83, DATA 70, PACKET 30, XMedia 24, MAP 22, TOUCH 17, SCRIPT 16, XImage 16, XNet 15, USERDATA 14, ANIOBJECT 12, DAMAGE 11, SOUND 11, XFont 11, XString 11, XResource 11, XMath 10, XFile 8, XFilter 8
+- 그 외 전역/정적 함수 다수 (mainTimer, handleCletEvent, javacall_* JNI 브릿지, BH_*/MH_*/MC_* 미들웨어 레이어, LzmaDec_* 압축, __log__print__ 5개 복사본)
+
+### 12.3 핵심 심볼 매핑 (이전 무명 주소 → 실명)
+┃ 이전 명칭 ┃ 실제 심볼 ┃ 주소/크기
+┃ 케이스14 핸들러 0x2e0e0 ┃ MENU::draw_MunjangStore(int*) ┃ 0x2da31, 5,412B
+┃ setAlpha 0x5e130 ┃ XGraphics::setAlpha(int) ┃ 0x5e131, 60B
+┃ img_slot_dispatch 0x5de2c ┃ XGraphics::set_LoadImage(int,int) ┃ 0x5de2d, 168B
+┃ creatImageLzma 0x5f320 ┃ XImage::creatImage(char*) 내부 ┃ 0x5f24d, 212B
+┃ 리소스 로드 0x40020 ┃ PLAY::_draw_EndingObject 내부 ┃ 0x3ffdd, 68B
+┃ 상태0 0x16660 ┃ MENU::draw_GDW() ┃ 0x164e5, 380B
+┃ draw_Menu 0x32564 ┃ MENU::draw_Option() ┃ 0x3215d, 1,032B
+┃ mainTimer 0xbd28 ┃ mainTimer(_MCTimer*, void*) ┃ 0xbd29, 464B
+┃ startClet 0xbef8 ┃ mainTimer 내부 오프셋 ┃ —
+┃ 설정 세터 0xb9fc ┃ (심볼 없음, paintClet 0xb9f9 직후) ┃ —
+┃ 화면 클리어 0x5d74c ┃ XGraphics::fillRect(int,int,int,int,int) ┃ 0x5d74d, 616B
+┃ MH_pltStart 0x6384 ┃ MH_pltStart ┃ 0x6385, 496B
+┃ 이벤트 루프 게이트 0x63fc ┃ MH_pltStart 내부 ┃ —
+┃ 객체 가드 0x613c4 ┃ XFile::available() ┃ 0x613b9, 12B
+┃ BH_eventq_wait 0x6140 ┃ BH_thread_cond_wait ┃ 0x6135, 12B
+┃ BH_eventq_add 0x61a8 ┃ BH_thread_cond_signal ┃ 0x619d, 12B
+┃ MC_grpSetContext 0x6de80 ┃ MC_grpGetContext ┃ 0x6de75, 12B
+┃ 멀티 슬롯 로드 0x5f910 ┃ (XImage 계열, 심볼 없음) ┃ —
+
+### 12.4 XGraphics 그래픽 파이프라인 (83 메서드)
+- **상태 설정군**: setAlpha(0x5e131), setColor(0x5e615), setClip(0x5e1c9), resetClip(0x5e5ed), setScreenRotate(0x5e245), setZoom(0x58c49), setGamma(0x58c65), setBright(0x58c81), setFilter(0x58ca9), setFlipX/Y/XY/None, setGray, setHide, setLight, setType, setChannel, setBufferDraw, setSwapColor
+- **픽셀/이미지 저수준**: _putPixel(6,440B!), _putPixelRotate(5,186B), _putPixelRotateLinear(2,596B), _putPIxelMemcopy, _putPixelZoom, _image, _drawImage, _copyImage, _copyBuffer(632B), flush(0x5ea61), saveLCD(0x5ddbd)/restoreLCD(0x5ddf5), set_LoadImage(0x5de2d), getImage/getImageWidth/getImageHeight
+- **팔레트군**: _putPalleteChange/Gray/Swap/Bright/Gamma, setPallete, getRGB_Pallete, getRGB, getRGB_LCD, setImagePallete, setCreatPallete, isCreatPallete
+- **드로잉 API**: drawImage, copyImage, drawNumber(0x5e47d), drawNumberEx(0x5e01d), drawString(0x5e639), drawRect(0x5e709), drawLine(0x5e77d), fillRect(0x5d74d), clear, drawClip/_drawClip/_set_Clip
+- **0x1cb000 디스패치 테이블 = XGraphics 메서드 vtable** — 16B 레코드 (flags, index, handler, size), 0x5e131~0x5eac4 연속 등록. 0x1cb408에 "lzma" 문자열 포인터(0x10f2e0) 저장 확인
+
+### 12.5 MENU 화면 상태 머신 (110 메서드, key_*/draw_* 쌍)
+- **상태별 핸들러 쌍**: key_Logo/draw_Logo, key_GDW/draw_GDW(0x164e5, 상태0), key_Option/draw_Option(0x3215d), key_MunjangStore/draw_MunjangStore(0x2da31, **케이스14**), key_Menu_GameStart, key_Menu_GameAsk, key_Menu_Vs(5,152B), key_Menu_Ranking(924B), key_MakeID(632B), key_Menu_Practice, key_Menu_Help, key_Muro, key_Inzung, key_DataCheck(SKT), key_SMS, key_BuyPoint(SKT/Smart/Revial), key_BetaOver/draw_BetaOver, draw_StageSelectUI, draw_DataCheck(1,112B), draw_MenuClr, draw_SelCircle, draw_SelArrowWid, draw_Menu_Present/GameZone, init_Menu, set_Menu_BackImgPosition
+- **구조**: MENU::key_*(int key, int* state) = 입력 핸들러 → 상태 전이, MENU::draw_* = 렌더링. draw_MunjangStore(케이스14)가 **5,412B 대형 함수** — 문장(문장상점) 화면
+
+### 12.6 PLAY/DATA/UI 핵심 구조
+- **PLAY 91**: 게임 플레이 상태 머신 (플레이어 액션, 전투, 스테이지 진행)
+- **DATA 70**: 게임 데이터 접근자 전부 get_* — get_Motion, get_MonsterData, get_WeaponData, get_CostumeData, get_StageData, get_ChapterData, get_BossData, get_ArticleData, get_CashItemData, get_MunjangItemData, get_ClassName, get_SoundData, get_DefaultStat, set_UserWeapon/Costume 등
+- **UI 88**: HUD/팝업 — _nPopup_Draw(0x5114e, setAlpha 호출부) 포함
+- **전역 데이터 테이블 (OBJECT)**: cha_info(28,692B), weapon_info(11,880B), effect_info(3,564B), costume_info(3,708B), mon_info(378B), ui_info(6,444B), titleani_info(990B), article1~8_info, backAni_info, object1~4_info, menuani_info — .rodata의 게임 리소스 메타데이터
+
+### 12.7 크래시 사슬 최종 해석 (케이스14 = MENU::draw_MunjangStore 경로)
+1. **근본 원인: [0x1BBA8C] GOT 오염** (§11.4) — __aeabi_idiv/0x2a80 스텁이 [0x1BBA8C]에서 함수 포인터 로드 → GOT 엔트리 주소(base+0x1BB998)로 오염 → .got 영역 실행 시도
+2. 오염된 포인터 경유로 **XGraphics::setAlpha(0x5e131) 진입** (lr = 리턴 슬롯 주소)
+3. setAlpha 프롤로그 `push {lr}` → lr(리턴 슬롯) 스택 저장 → 내부 bl 0x6de80(MC_grpGetContext) → 에필로그 `pop {pc}` → **리턴 슬롯 주소가 pc로 복원 → anon NX 영역 실행 → SEGV_ACCERR**
+4. ART JIT/Nterp는 네이티브 호출 시 lr에 리턴 슬롯 주소를 두는 규약 — setAlpha의 `pop {pc}` 에필로그와 충돌
+5. vmSafeMode(14:49 실측) 무효 — Nterp도 동일 리턴 슬롯 규약 사용
+
+### 12.8 해결 방안 (우선순위)
+① **자체 __aeabi_idiv 구현** (0x76524 제로 블록) → 0x2668/0x2a88의 `ldr pc` 교체 → GOT [0x1BBA8C] 의존 제거 (오염원 차단, §11.6 ①)
+② **[0x1BBA8C] 오염원 코드 추적** — 누가 GOT 주소를 쓰는지 최종 규명
+③ setAlpha 에필로그 보정 — JIT 리턴 슬롯 호출 대응 (프롤로그에서 lr 보정 또는 bx lr 전환)
+④ MENU::draw_MunjangStore(케이스14) 진입 조건 확인 — 디스패치 테이블 0x1c4998 케이스14 → 0x2da31 경로 검증
