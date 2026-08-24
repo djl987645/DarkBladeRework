@@ -396,3 +396,88 @@ DBG:resload(0x40020)            ← 미진입 (대형 리소스 로드 경로 �
 ② **[0x1BBA8C] 오염원 코드 추적** — 누가 GOT 주소를 쓰는지 최종 규명
 ③ setAlpha 에필로그 보정 — JIT 리턴 슬롯 호출 대응 (프롤로그에서 lr 보정 또는 bx lr 전환)
 ④ MENU::draw_MunjangStore(케이스14) 진입 조건 확인 — 디스패치 테이블 0x1c4998 케이스14 → 0x2da31 경로 검증
+
+---
+
+## 9. 방안 C (DirectByteBuffer 주입) 실측 — LCD 객체 구조 해명 (2026-08-24)
+
+### 9.1 실측 결과 요약
+- surfaceCreated에서 `DirectByteBuffer.allocateDirect(192,000)` → `Buffer.address` = 0xe4d7b010 (3회 연속 동일) → `AppThread.sFrameBuffer:J` 저장 → initCanvas(0x3f20)가 GetStaticLongField로 읽어 **0x5748 함수가 [0x1BCB88]에 저장** (S8 실측: r0=0xe4d7b010).
+- 자바 측 장애 전부 해소: FB init 성공, FrameFlusher copyPixelsFromBuffer 시그니처 `(Ljava/nio/Buffer;)V` (ByteBuffer 아님 — NoSuchMethodError 실측), 리소스 로드 res.dat 3,521,012B 정상.
+- **네이티브 렌더 루프 진입 확정** (게임 자체 실행!): `pltStart(0x2ac9) → AppThread_Start(0x4653) → MH_pltStart(0x64df) → mainTimer(0xbd7b) → XGraphics::flush(0x5ea91) → MC_grpFlushLcd(0x6e3df) → MH_fbFlushLcdWithFrameBuffer(0x69321) → BH_fbFlushLcdWithFrameBuffer(0x5ac4)` — 최초의 네이티브 드로잉 경로!
+- **새 크래시**: `SIGSEGV (SEGV_MAPERR) fault addr 0x58` @ 0x5ac4 (PID 12395, tid 12463 Thread-2).
+
+### 9.2 크래시 메커니즘 — [0x1BCB88]은 "LCD C++ 객체"
+```
+0x5ab4: ldr r2, [sp,#0x1c]   ; r2 = base (0x1BB908)
+0x5ab6: ldr r3, [sp,#8]      ; r3 = 0x1280
+0x5ab8: ldr r4, [sp,#0xc]    ; r4 = 0x12AC
+0x5aba: ldr r0, [r2,r3]      ; r0 = [0x1BCB88] = 주입 주소 (0xe4d7b010)
+0x5abc: adds r1, r2, r4      ; r1 = 0x1BCBB4 (SkBitmap2)
+0x5abe: ldr r3, [r0]         ; r3 = 버퍼 첫 워드 = 0 (DirectByteBuffer 메모리)
+0x5ac4: ldr r4, [r3,#0x58]   ; ★ SEGV — vtable+0x58 역참조
+0x5aca: blx r4               ; 콜백 호출 예정
+```
+**결론**: [0x1BCB88]은 "픽셀 원시 주소"가 아니라 **C++ SkCanvas 객체 포인터** — 첫 워드=vtable, vtable+0x58=가상 콜백. DirectByteBuffer 주소는 0x58ee null 체크는 통과하나, 버퍼 메모리가 전부 0이라 vtable 역참조에서 SEGV_MAPERR.
+
+### 9.3 전역 레이아웃 최종 확정 (base = 0x1BB908, PC-상대 리터럴 정밀 역산)
+리터럴 풀 0x5c88~0x5ca8 / 0x5b8c~0x5ba8 / 0x5754~0x5758 덤프 + add Rd,pc의 PC = Align(addr+4,4) 규칙 적용:
+
+| 오프셋 | 주소 | 내용 |
+|---|---|---|
+| +0x1280 | 0x1BCB88 | **LCD 객체 (SkCanvas)** — BH null 체크 + vtable+0x58 콜백 |
+| +0x1284 | 0x1BCB8C | **SkBitmap1 (게임 메인 버퍼)** — 0x5bc0: setConfig(400,240,RGB_565)/allocPixels/eraseARGB |
+| +0x12AC | 0x1BCBB4 | **SkBitmap2 (스케일링 버퍼)** — 0x5c3a: setConfig(plW,appH)/allocPixels/eraseARGB (plW≠appW일 때만) |
+| +0x12D4 | 0x1BCBDC | appW (400) |
+| +0x12D8 | 0x1BCBE0 | appH (240) |
+| +0x12DC | 0x1BCBE4 | plW |
+| +0x12E0 | 0x1BCBE8 | plH |
+| +0x12E4 | 0x1BCBEC | plX |
+| +0x12E8 | 0x1BCBF0 | plY |
+
+주의: BH 함수 프롤로그는 base=0x1BB904 (0x58e4: add r1,pc), initCanvas 0x5748은 base=0x1BB908 (0x574c: add r3,pc) — **코드 경로별 base 리터럴이 다름!** (0x1B6020+0x58E4=0x1BB904, 0x1B61B8+0x5750=0x1BB908). 0x1BCB88은 0x1BB908+0x1280으로 일치.
+
+### 9.4 BH_fbFlushLcdWithFrameBuffer (0x58d0) 구조 최종
+```
+0x58de~0x58e8: base→[sp+0x1c], 0x1280→[sp+8]
+0x58ea: r6 = base + 0x1280 = 0x1BCB88
+0x58ee: ldr r3,[r6] / cmp #0 / bne → 0x58f6, b 0x5ad6 (null=조기종료)
+0x58f6: SkPaint ctor (sp+0x4c)
+0x5902~0x5928: [0x1BCBDC]=appW vs [0x1BCBE4]=plW 비교 — 다르면 스케일링 경로
+0x592a: getAddr(0x1BCBB4, 0, 0) → r7 (SkBitmap2 픽셀)
+0x5936: getAddr(0x1BCB8C, 0, 0) → r6 (SkBitmap1 픽셀)   ← [0x5ba8]=0x1284
+0x59c4~0x5a74: RGB565 블렌딩 루프 (SkBitmap2→SkBitmap1 스케일링 복사)
+0x5ab4~0x5aca: [0x1BCB88] 콜백 호출 (r1=0x1BCBB4 SkBitmap2, r2=sp+0x88, r3=sp+0x98)
+```
+
+### 9.5 PLT 심볼 완전 확정 (ARM 모드 디스어셈블 GOT 역산)
+| PLT | GOT | 심볼 |
+|---|---|---|
+| 0x2750 | 0x1bb97c | SkBitmap::setConfig |
+| 0x2900 | 0x1bba0c | SkBitmap::allocPixels |
+| 0x27c8 | 0x1bb9a4 | SkBitmap::eraseARGB |
+| 0x2954 | 0x1bba28 | SkBitmap::getAddr |
+| 0x27a4 | 0x1bb998 | __android_log_print |
+| 0x2660 | 0x1bb92c | memcpy |
+| 0x2a50 | 0x1bba7c | SkPaint::SkPaint() |
+| 0x2a38 | 0x1bba74 | __aeabi_i2f |
+| 0x2804 | 0x1bb9b8 | __aeabi_uidivmod |
+| 0x2a14 | 0x1bba68 | SkString::SkString() |
+| 0x278c | 0x1bb990 | SkString::~SkString() |
+
+계산법: `got = plt_ldr_pc_addr + 0x1b9008 + ldr_오프셋` (ARM 모드 `ldr pc,[ip,#off]!`의 off). readelf만으로 GOT 추측 금지 (1차 오판: 0x1bba2c=sprintf).
+
+### 9.6 initCanvas (0x3f20) 패치 상태 (슬롯 144/151)
+- 0x3f42: 0xbc→0x90, 0x3f46: lsls#1→#2 → GetStaticFieldID(슬롯 144=0x240)
+- 0x3f56: 0xc8→0x97, 0x3f58: lsls#1→#2 → GetStaticLongField(슬롯 151=0x25C)
+- 0x3f60: mov r1,sl→mov r1,r8 (jclass 전달 — GetStatic*는 jclass 필수)
+- 문자열: "com/beyond/AppThread"@0x720DC, "J"@0x720F1, "sFrameBuffer"@0x711F8
+- 0x3f64: bl 0x5748 → [0x1BCB88] = r0 (현재) / **0x1BCB8C로 변경 예정 (방안 C-2)**
+
+### 9.7 다음 사이클 — 방안 C-2 "SkBitmap 교체" (1바이트 패치!)
+0x5748 함수 (0x5748~0x5750): `[0x1BB908 + 0x1280] = r0` — 리터럴 [0x5758]을 **0x1280 → 0x1284**로 변경:
+- **[0x1BCB88] = 0 유지** → BH null 체크(0x58ee)에서 조기종료 → **콜백 크래시 원천 제거**
+- **[0x1BCB8C] = A (DirectByteBuffer)** → SkBitmap1 = A → getAddr(x,y) = A+0x200+y*800+x*2 → **게임이 A+0x200에 직접 렌더링!**
+- A 필드 (smali, surfaceCreated에서 LITTLE_ENDIAN 기록): A[4]=A+0x200(fPixels), A[8]=800(rowBytes=400×2), A[0xc]=400(width), A[0x10]=240(height)
+- FrameFlusher: position(0x200) 후 copyPixelsFromBuffer → 화면 출력
+- 검증: PID 생존 + 크래시 0건 + 화면 출력 + gfxinfo 프레임

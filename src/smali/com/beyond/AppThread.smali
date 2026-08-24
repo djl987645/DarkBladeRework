@@ -14,6 +14,20 @@
 
 .field public static player:Landroid/media/MediaPlayer;
 
+.field public static sAppW:I
+
+.field public static sAppH:I
+
+.field public static sFrameBuf:Ljava/nio/ByteBuffer;
+
+.field public static sFrameBitmap:Landroid/graphics/Bitmap;
+
+.field public static sFrameBuffer:J
+
+.field public static sHolder:Landroid/view/SurfaceHolder;
+
+.field public static sFlusherStarted:Z
+
 
 # instance fields
 .field private context:Landroid/content/Context;
@@ -2218,9 +2232,29 @@
 .end method
 
 .method public run()V
-    .locals 2
+    .locals 3
 
     .prologue
+    # 플러셔 스레드 시작 (1회) — 프레임버퍼 → Surface 출력
+    sget-boolean v0, Lcom/beyond/AppThread;->sFlusherStarted:Z
+
+    if-nez v0, :flusher_done
+
+    const/4 v0, 0x1
+
+    sput-boolean v0, Lcom/beyond/AppThread;->sFlusherStarted:Z
+
+    new-instance v0, Ljava/lang/Thread;
+
+    new-instance v1, Lcom/beyond/FrameFlusher;
+
+    invoke-direct {v1}, Lcom/beyond/FrameFlusher;-><init>()V
+
+    invoke-direct {v0, v1}, Ljava/lang/Thread;-><init>(Ljava/lang/Runnable;)V
+
+    invoke-virtual {v0}, Ljava/lang/Thread;->start()V
+
+    :flusher_done
     .line 1046
     iget-object v0, p0, Lcom/beyond/AppThread;->context:Landroid/content/Context;
 
@@ -2305,6 +2339,11 @@
     .param p6, "plH"    # I
 
     .prologue
+    .line 1030
+    sput p1, Lcom/beyond/AppThread;->sAppW:I
+
+    sput p2, Lcom/beyond/AppThread;->sAppH:I
+
     .line 1031
     invoke-virtual/range {p0 .. p6}, Lcom/beyond/AppThread;->setCanvas(IIIIII)V
 
@@ -2331,6 +2370,8 @@
     .prologue
     .line 1023
     iput-object p1, p0, Lcom/beyond/AppThread;->mHolder:Landroid/view/SurfaceHolder;
+
+    sput-object p1, Lcom/beyond/AppThread;->sHolder:Landroid/view/SurfaceHolder;
 
     .line 1024
     return-void
