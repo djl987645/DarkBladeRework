@@ -1,5 +1,5 @@
 version: 3.0.3
-apkFileName: KTF.apk
+apkFileName: orig_KTF.apk
 usesFramework:
   ids:
   - 1

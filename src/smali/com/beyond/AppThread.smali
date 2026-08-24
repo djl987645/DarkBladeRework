@@ -14,20 +14,6 @@
 
 .field public static player:Landroid/media/MediaPlayer;
 
-.field public static sAppW:I
-
-.field public static sAppH:I
-
-.field public static sFrameBuf:Ljava/nio/ByteBuffer;
-
-.field public static sFrameBitmap:Landroid/graphics/Bitmap;
-
-.field public static sFrameBuffer:J
-
-.field public static sHolder:Landroid/view/SurfaceHolder;
-
-.field public static sFlusherStarted:Z
-
 
 # instance fields
 .field private context:Landroid/content/Context;
@@ -131,6 +117,10 @@
     iput-object p1, p0, Lcom/beyond/AppThread;->host:Lcom/beyond/CletActivity;
 
     .line 1008
+    const-string v0, "skia_legacy"
+
+    invoke-static {v0}, Ljava/lang/System;->loadLibrary(Ljava/lang/String;)V
+
     const-string v0, "Launcher"
 
     invoke-static {v0}, Ljava/lang/System;->loadLibrary(Ljava/lang/String;)V
@@ -397,36 +387,28 @@
 
 
 # virtual methods
-    # [네이티브] 결제 이벤트 처리 (구매 완료/실패)
-    .method public native BhandleBuyEvent(II)V
+.method public native BhandleBuyEvent(II)V
 .end method
 
-    # [네이티브] 키 입력 이벤트 (반환값: 처리 여부)
-    .method public native BhandleKeyEvent(II)Z
+.method public native BhandleKeyEvent(II)Z
 .end method
 
-    # [네이티브] 미디어(배경음악) 재생 완료 이벤트
-    .method public native BhandleMediaEvent(Landroid/media/MediaPlayer;I)V
+.method public native BhandleMediaEvent(Landroid/media/MediaPlayer;I)V
 .end method
 
-    # [네이티브] 모션(트랙볼/방향키) 입력 이벤트
-    .method public native BhandleMotionEvent(III)V
+.method public native BhandleMotionEvent(III)V
 .end method
 
-    # [네이티브] 네트워크 이벤트 (서버 응답 콜백)
-    .method public native BhandleNetEvent(II)V
+.method public native BhandleNetEvent(II)V
 .end method
 
-    # [네이티브] 터치 드래그 입력
-    .method public native BhandleTouchDrag(III)V
+.method public native BhandleTouchDrag(III)V
 .end method
 
-    # [네이티브] 터치 눌림 입력
-    .method public native BhandleTouchPress(III)V
+.method public native BhandleTouchPress(III)V
 .end method
 
-    # [네이티브] 터치 뗌 입력
-    .method public native BhandleTouchRelease(III)V
+.method public native BhandleTouchRelease(III)V
 .end method
 
 .method public MyScoket_connection(Ljava/lang/Object;)V
@@ -1042,10 +1024,6 @@
 
     .prologue
     .line 1114
-    const-string v4, "HERMES_DBG"
-    const-string v5, "getAssetResZip() called, opening res.dat"
-    invoke-static {v4, v5}, Landroid/util/Log;->i(Ljava/lang/String;Ljava/lang/String;)I
-
     :try_start_0
     iget-object v4, p0, Lcom/beyond/AppThread;->context:Landroid/content/Context;
 
@@ -1067,15 +1045,6 @@
 
     .line 1122
     .local v3, "size":I
-    const-string v4, "HERMES_DBG"
-    new-instance v5, Ljava/lang/StringBuilder;
-    invoke-direct {v5}, Ljava/lang/StringBuilder;-><init>()V
-    const-string v1, "res.dat loaded, size="
-    invoke-virtual {v5, v1}, Ljava/lang/StringBuilder;->append(Ljava/lang/String;)Ljava/lang/StringBuilder;
-    invoke-virtual {v5, v3}, Ljava/lang/StringBuilder;->append(I)Ljava/lang/StringBuilder;
-    invoke-virtual {v5}, Ljava/lang/StringBuilder;->toString()Ljava/lang/String;
-    move-result-object v1
-    invoke-static {v4, v1}, Landroid/util/Log;->i(Ljava/lang/String;Ljava/lang/String;)I
     new-array v0, v3, [B
 
     .line 1123
@@ -1345,14 +1314,10 @@
 .end method
 
 .method public getResZip()[B
-    .locals 4
+    .locals 2
 
     .prologue
     .line 1104
-    const-string v2, "HERMES_DBG"
-    const-string v3, "getResZip() called"
-    invoke-static {v2, v3}, Landroid/util/Log;->i(Ljava/lang/String;Ljava/lang/String;)I
-
     const-string v1, "ext_res"
 
     invoke-static {v1}, Lcom/beyond/AppProperty;->getString(Ljava/lang/String;)Ljava/lang/String;
@@ -1504,8 +1469,7 @@
     return v2
 .end method
 
-    # [네이티브] 렌더 타깃(Canvas) 초기화
-    .method public native initCanvas(Landroid/graphics/Canvas;)V
+.method public native initCanvas(Landroid/graphics/Canvas;)V
 .end method
 
 .method public knlshowExitDlg([C[C)V
@@ -2215,46 +2179,22 @@
     return-void
 .end method
 
-    # [네이티브] 게임 종료 (스레드/리소스 정리)
-    .method public native pltFinish()V
+.method public native pltFinish()V
 .end method
 
-    # [네이티브] 게임 일시정지 (백그라운드 전환 시)
-    .method public native pltPause()V
+.method public native pltPause()V
 .end method
 
-    # [네이티브] 게임 재개 (포그라운드 복귀 시)
-    .method public native pltResume()V
+.method public native pltResume()V
 .end method
 
-    # [네이티브] 게임 시작! (filesDir, cacheDir 경로 전달) — libLauncher.so 진입점
-    .method public native pltStart(Ljava/lang/String;Ljava/lang/String;)V
+.method public native pltStart(Ljava/lang/String;Ljava/lang/String;)V
 .end method
 
 .method public run()V
-    .locals 3
+    .locals 2
 
     .prologue
-    # 플러셔 스레드 시작 (1회) — 프레임버퍼 → Surface 출력
-    sget-boolean v0, Lcom/beyond/AppThread;->sFlusherStarted:Z
-
-    if-nez v0, :flusher_done
-
-    const/4 v0, 0x1
-
-    sput-boolean v0, Lcom/beyond/AppThread;->sFlusherStarted:Z
-
-    new-instance v0, Ljava/lang/Thread;
-
-    new-instance v1, Lcom/beyond/FrameFlusher;
-
-    invoke-direct {v1}, Lcom/beyond/FrameFlusher;-><init>()V
-
-    invoke-direct {v0, v1}, Ljava/lang/Thread;-><init>(Ljava/lang/Runnable;)V
-
-    invoke-virtual {v0}, Ljava/lang/Thread;->start()V
-
-    :flusher_done
     .line 1046
     iget-object v0, p0, Lcom/beyond/AppThread;->context:Landroid/content/Context;
 
@@ -2313,8 +2253,7 @@
     return-void
 .end method
 
-    # [네이티브] 캔버스 크기/오프셋 설정 (SkBitmap 초기화 유발)
-    .method public native setCanvas(IIIIII)V
+.method public native setCanvas(IIIIII)V
 .end method
 
 .method public setCanvas(Landroid/graphics/Canvas;)V
@@ -2330,7 +2269,7 @@
 .end method
 
 .method public setCanvasSize(IIIIII)V
-    .locals 2
+    .locals 0
     .param p1, "appW"    # I
     .param p2, "appH"    # I
     .param p3, "plX"    # I
@@ -2339,44 +2278,6 @@
     .param p6, "plH"    # I
 
     .prologue
-    # [진단] setCanvasSize 진입
-    new-instance v0, Ljava/lang/StringBuilder;
-
-    invoke-direct {v0}, Ljava/lang/StringBuilder;-><init>()V
-
-    const-string v1, "SCS w="
-
-    invoke-virtual {v0, v1}, Ljava/lang/StringBuilder;->append(Ljava/lang/String;)Ljava/lang/StringBuilder;
-
-    move-result-object v0
-
-    invoke-virtual {v0, p1}, Ljava/lang/StringBuilder;->append(I)Ljava/lang/StringBuilder;
-
-    move-result-object v0
-
-    const-string v1, " h="
-
-    invoke-virtual {v0, v1}, Ljava/lang/StringBuilder;->append(Ljava/lang/String;)Ljava/lang/StringBuilder;
-
-    move-result-object v0
-
-    invoke-virtual {v0, p2}, Ljava/lang/StringBuilder;->append(I)Ljava/lang/StringBuilder;
-
-    move-result-object v0
-
-    const-string v1, "HERMES_DBG"
-
-    invoke-virtual {v0}, Ljava/lang/StringBuilder;->toString()Ljava/lang/String;
-
-    move-result-object v0
-
-    invoke-static {v1, v0}, Landroid/util/Log;->i(Ljava/lang/String;Ljava/lang/String;)I
-
-    .line 1030
-    sput p1, Lcom/beyond/AppThread;->sAppW:I
-
-    sput p2, Lcom/beyond/AppThread;->sAppH:I
-
     .line 1031
     invoke-virtual/range {p0 .. p6}, Lcom/beyond/AppThread;->setCanvas(IIIIII)V
 
@@ -2403,8 +2304,6 @@
     .prologue
     .line 1023
     iput-object p1, p0, Lcom/beyond/AppThread;->mHolder:Landroid/view/SurfaceHolder;
-
-    sput-object p1, Lcom/beyond/AppThread;->sHolder:Landroid/view/SurfaceHolder;
 
     .line 1024
     return-void
